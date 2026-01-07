@@ -1,0 +1,347 @@
+
+> Configure project :app
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Configure project :capacitor-cordova-android-plugins
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Task :clean
+> Task :app:clean
+> Task :capacitor-android:clean
+> Task :capacitor-app:clean
+> Task :capacitor-community-sqlite:clean
+> Task :capacitor-cordova-android-plugins:clean
+> Task :capacitor-device:clean
+> Task :capacitor-network:clean
+> Task :capacitor-preferences:clean
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :capacitor-android:preBuild UP-TO-DATE
+> Task :capacitor-android:preDebugBuild UP-TO-DATE
+> Task :capacitor-app:preBuild UP-TO-DATE
+> Task :capacitor-app:preDebugBuild UP-TO-DATE
+> Task :capacitor-android:writeDebugAarMetadata
+> Task :app:javaPreCompileDebug
+> Task :capacitor-community-sqlite:preBuild UP-TO-DATE
+> Task :capacitor-community-sqlite:preDebugBuild UP-TO-DATE
+> Task :capacitor-app:writeDebugAarMetadata
+> Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preDebugBuild UP-TO-DATE
+> Task :capacitor-device:preBuild UP-TO-DATE
+> Task :capacitor-device:preDebugBuild UP-TO-DATE
+> Task :capacitor-community-sqlite:writeDebugAarMetadata
+> Task :capacitor-cordova-android-plugins:writeDebugAarMetadata
+> Task :capacitor-network:preBuild UP-TO-DATE
+> Task :capacitor-network:preDebugBuild UP-TO-DATE
+> Task :capacitor-device:writeDebugAarMetadata
+> Task :capacitor-preferences:preBuild UP-TO-DATE
+> Task :capacitor-preferences:preDebugBuild UP-TO-DATE
+> Task :capacitor-network:writeDebugAarMetadata
+> Task :capacitor-preferences:writeDebugAarMetadata
+> Task :capacitor-android:processDebugNavigationResources
+> Task :app:checkDebugAarMetadata
+> Task :capacitor-app:processDebugNavigationResources
+> Task :capacitor-community-sqlite:processDebugNavigationResources
+> Task :capacitor-cordova-android-plugins:processDebugNavigationResources
+> Task :capacitor-device:processDebugNavigationResources
+> Task :capacitor-network:processDebugNavigationResources
+> Task :capacitor-preferences:processDebugNavigationResources
+> Task :app:processDebugNavigationResources
+> Task :app:generateDebugResValues
+> Task :app:compileDebugNavigationResources
+> Task :capacitor-android:generateDebugResValues
+> Task :capacitor-android:generateDebugResources
+> Task :capacitor-android:packageDebugResources
+> Task :capacitor-app:generateDebugResValues
+> Task :capacitor-app:generateDebugResources
+> Task :capacitor-app:packageDebugResources
+> Task :capacitor-community-sqlite:generateDebugResValues
+> Task :capacitor-community-sqlite:generateDebugResources
+> Task :capacitor-community-sqlite:packageDebugResources
+> Task :capacitor-cordova-android-plugins:generateDebugResValues
+> Task :capacitor-cordova-android-plugins:generateDebugResources
+> Task :capacitor-cordova-android-plugins:packageDebugResources
+> Task :capacitor-device:generateDebugResValues
+> Task :capacitor-device:generateDebugResources
+> Task :capacitor-device:packageDebugResources
+> Task :capacitor-network:generateDebugResValues
+> Task :capacitor-network:generateDebugResources
+> Task :capacitor-network:packageDebugResources
+> Task :capacitor-preferences:generateDebugResValues
+> Task :capacitor-preferences:generateDebugResources
+> Task :capacitor-preferences:packageDebugResources
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :capacitor-android:extractDeepLinksDebug
+> Task :capacitor-app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :capacitor-community-sqlite:extractDeepLinksDebug
+> Task :capacitor-android:processDebugManifest
+> Task :capacitor-app:processDebugManifest
+> Task :capacitor-community-sqlite:processDebugManifest
+> Task :capacitor-cordova-android-plugins:extractDeepLinksDebug
+> Task :capacitor-cordova-android-plugins:processDebugManifest
+> Task :capacitor-device:extractDeepLinksDebug
+> Task :capacitor-device:processDebugManifest
+> Task :capacitor-network:extractDeepLinksDebug
+> Task :capacitor-preferences:extractDeepLinksDebug
+> Task :capacitor-android:compileDebugLibraryResources
+> Task :capacitor-network:processDebugManifest
+> Task :capacitor-app:compileDebugLibraryResources
+> Task :capacitor-preferences:processDebugManifest
+> Task :capacitor-android:parseDebugLocalResources
+> Task :capacitor-app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :capacitor-android:generateDebugRFile
+> Task :capacitor-community-sqlite:compileDebugLibraryResources
+> Task :capacitor-app:generateDebugRFile
+> Task :capacitor-cordova-android-plugins:compileDebugLibraryResources
+> Task :capacitor-community-sqlite:parseDebugLocalResources
+> Task :capacitor-cordova-android-plugins:parseDebugLocalResources
+> Task :capacitor-community-sqlite:generateDebugRFile
+> Task :capacitor-device:compileDebugLibraryResources
+> Task :capacitor-cordova-android-plugins:generateDebugRFile
+> Task :capacitor-network:compileDebugLibraryResources
+> Task :capacitor-device:parseDebugLocalResources
+> Task :capacitor-network:parseDebugLocalResources
+> Task :capacitor-preferences:compileDebugLibraryResources
+> Task :capacitor-device:generateDebugRFile
+> Task :capacitor-android:javaPreCompileDebug
+> Task :capacitor-preferences:parseDebugLocalResources
+> Task :capacitor-app:javaPreCompileDebug
+> Task :capacitor-preferences:generateDebugRFile
+> Task :capacitor-network:generateDebugRFile
+
+> Task :capacitor-android:compileDebugJavaWithJavac
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+
+> Task :capacitor-android:bundleLibCompileToJarDebug
+> Task :capacitor-community-sqlite:javaPreCompileDebug
+> Task :capacitor-app:compileDebugJavaWithJavac
+> Task :capacitor-app:bundleLibCompileToJarDebug
+> Task :app:processDebugResources
+
+> Task :capacitor-community-sqlite:compileDebugJavaWithJavac
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+
+> Task :capacitor-cordova-android-plugins:javaPreCompileDebug
+> Task :capacitor-cordova-android-plugins:compileDebugJavaWithJavac NO-SOURCE
+> Task :capacitor-device:javaPreCompileDebug
+> Task :capacitor-community-sqlite:bundleLibCompileToJarDebug
+> Task :capacitor-cordova-android-plugins:bundleLibCompileToJarDebug
+> Task :capacitor-device:compileDebugJavaWithJavac
+> Task :capacitor-device:bundleLibCompileToJarDebug
+> Task :capacitor-network:javaPreCompileDebug
+> Task :capacitor-preferences:javaPreCompileDebug
+> Task :capacitor-network:compileDebugJavaWithJavac
+> Task :capacitor-network:bundleLibCompileToJarDebug
+> Task :capacitor-preferences:compileDebugJavaWithJavac
+> Task :capacitor-preferences:bundleLibCompileToJarDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugJavaWithJavac
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :capacitor-android:mergeDebugShaders
+> Task :capacitor-android:compileDebugShaders NO-SOURCE
+> Task :capacitor-android:generateDebugAssets UP-TO-DATE
+> Task :capacitor-android:mergeDebugAssets
+> Task :capacitor-app:mergeDebugShaders
+> Task :capacitor-app:compileDebugShaders NO-SOURCE
+> Task :capacitor-app:generateDebugAssets UP-TO-DATE
+> Task :capacitor-app:mergeDebugAssets
+> Task :capacitor-community-sqlite:mergeDebugShaders
+> Task :capacitor-community-sqlite:compileDebugShaders NO-SOURCE
+> Task :capacitor-community-sqlite:generateDebugAssets UP-TO-DATE
+> Task :capacitor-community-sqlite:mergeDebugAssets
+> Task :capacitor-cordova-android-plugins:mergeDebugShaders
+> Task :capacitor-cordova-android-plugins:compileDebugShaders NO-SOURCE
+> Task :capacitor-cordova-android-plugins:generateDebugAssets UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeDebugAssets
+> Task :capacitor-device:mergeDebugShaders
+> Task :capacitor-device:compileDebugShaders NO-SOURCE
+> Task :capacitor-device:generateDebugAssets UP-TO-DATE
+> Task :capacitor-device:mergeDebugAssets
+> Task :capacitor-network:mergeDebugShaders
+> Task :capacitor-network:compileDebugShaders NO-SOURCE
+> Task :capacitor-network:generateDebugAssets UP-TO-DATE
+> Task :capacitor-network:mergeDebugAssets
+> Task :capacitor-preferences:mergeDebugShaders
+> Task :capacitor-preferences:compileDebugShaders NO-SOURCE
+> Task :capacitor-preferences:generateDebugAssets UP-TO-DATE
+> Task :capacitor-preferences:mergeDebugAssets
+> Task :app:mergeDebugAssets
+> Task :capacitor-app:bundleLibRuntimeToJarDebug
+> Task :capacitor-device:bundleLibRuntimeToJarDebug
+> Task :capacitor-community-sqlite:bundleLibRuntimeToJarDebug
+> Task :capacitor-network:bundleLibRuntimeToJarDebug
+> Task :capacitor-preferences:bundleLibRuntimeToJarDebug
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarDebug
+> Task :capacitor-android:bundleLibRuntimeToJarDebug
+> Task :app:desugarDebugFileDependencies
+> Task :app:compressDebugAssets
+> Task :app:dexBuilderDebug
+> Task :app:processDebugJavaRes NO-SOURCE
+> Task :capacitor-android:processDebugJavaRes NO-SOURCE
+> Task :capacitor-app:processDebugJavaRes NO-SOURCE
+> Task :capacitor-community-sqlite:processDebugJavaRes
+> Task :capacitor-cordova-android-plugins:processDebugJavaRes NO-SOURCE
+> Task :capacitor-device:processDebugJavaRes NO-SOURCE
+> Task :capacitor-network:processDebugJavaRes NO-SOURCE
+> Task :capacitor-preferences:processDebugJavaRes NO-SOURCE
+> Task :capacitor-app:bundleLibRuntimeToDirDebug
+> Task :capacitor-device:bundleLibRuntimeToDirDebug
+> Task :capacitor-network:bundleLibRuntimeToDirDebug
+> Task :app:checkDebugDuplicateClasses
+> Task :capacitor-preferences:bundleLibRuntimeToDirDebug
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToDirDebug
+> Task :app:mergeDebugJniLibFolders
+> Task :app:mergeProjectDexDebug
+> Task :capacitor-android:mergeDebugJniLibFolders
+> Task :capacitor-android:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-android:copyDebugJniLibsProjectOnly
+> Task :capacitor-app:mergeDebugJniLibFolders
+> Task :capacitor-app:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-app:copyDebugJniLibsProjectOnly
+> Task :capacitor-community-sqlite:mergeDebugJniLibFolders
+> Task :capacitor-community-sqlite:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-community-sqlite:copyDebugJniLibsProjectOnly
+> Task :capacitor-community-sqlite:bundleLibRuntimeToDirDebug
+> Task :capacitor-cordova-android-plugins:mergeDebugJniLibFolders
+> Task :capacitor-cordova-android-plugins:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-cordova-android-plugins:copyDebugJniLibsProjectOnly
+> Task :capacitor-device:mergeDebugJniLibFolders
+> Task :capacitor-device:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-device:copyDebugJniLibsProjectOnly
+> Task :capacitor-network:mergeDebugJniLibFolders
+> Task :capacitor-network:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-network:copyDebugJniLibsProjectOnly
+> Task :capacitor-preferences:mergeDebugJniLibFolders
+> Task :capacitor-preferences:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-preferences:copyDebugJniLibsProjectOnly
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:mergeDebugNativeLibs
+> Task :capacitor-android:checkDebugAarMetadata
+> Task :capacitor-android:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-android:copyDebugJniLibsProjectAndLocalJars
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libsqlcipher.so. Run with --info option to learn more.
+
+> Task :capacitor-android:extractDebugAnnotations
+> Task :capacitor-android:extractDeepLinksForAarDebug
+> Task :capacitor-android:mergeDebugGeneratedProguardFiles
+> Task :capacitor-android:mergeDebugConsumerProguardFiles
+> Task :capacitor-android:prepareDebugArtProfile
+> Task :capacitor-android:prepareLintJarForPublish
+> Task :capacitor-android:mergeDebugJavaResource
+> Task :capacitor-app:checkDebugAarMetadata
+> Task :app:mergeDebugJavaResource
+> Task :capacitor-android:syncDebugLibJars
+> Task :app:mergeDebugGlobalSynthetics
+> Task :capacitor-android:bundleDebugAar
+> Task :capacitor-android:assembleDebug
+> Task :capacitor-app:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-android:bundleLibRuntimeToDirDebug
+> Task :capacitor-app:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-app:extractDebugAnnotations
+> Task :capacitor-app:extractDeepLinksForAarDebug
+> Task :capacitor-app:mergeDebugGeneratedProguardFiles
+> Task :capacitor-app:mergeDebugConsumerProguardFiles
+> Task :capacitor-app:prepareDebugArtProfile
+> Task :capacitor-app:prepareLintJarForPublish
+> Task :capacitor-app:mergeDebugJavaResource
+> Task :capacitor-community-sqlite:checkDebugAarMetadata
+> Task :capacitor-app:syncDebugLibJars
+> Task :capacitor-app:bundleDebugAar
+> Task :capacitor-app:assembleDebug
+> Task :capacitor-community-sqlite:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-community-sqlite:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-community-sqlite:extractDebugAnnotations
+> Task :capacitor-community-sqlite:extractDeepLinksForAarDebug
+> Task :capacitor-community-sqlite:mergeDebugGeneratedProguardFiles
+> Task :capacitor-community-sqlite:mergeDebugConsumerProguardFiles
+> Task :capacitor-community-sqlite:prepareDebugArtProfile
+> Task :capacitor-community-sqlite:prepareLintJarForPublish
+> Task :capacitor-community-sqlite:mergeDebugJavaResource
+> Task :capacitor-cordova-android-plugins:checkDebugAarMetadata
+> Task :capacitor-community-sqlite:syncDebugLibJars
+> Task :capacitor-community-sqlite:bundleDebugAar
+> Task :capacitor-community-sqlite:assembleDebug
+> Task :capacitor-cordova-android-plugins:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-cordova-android-plugins:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-cordova-android-plugins:extractDebugAnnotations
+> Task :capacitor-cordova-android-plugins:extractDeepLinksForAarDebug
+> Task :capacitor-cordova-android-plugins:mergeDebugGeneratedProguardFiles
+> Task :capacitor-cordova-android-plugins:mergeDebugConsumerProguardFiles
+> Task :capacitor-cordova-android-plugins:prepareDebugArtProfile
+> Task :capacitor-cordova-android-plugins:prepareLintJarForPublish
+> Task :capacitor-cordova-android-plugins:mergeDebugJavaResource
+> Task :capacitor-device:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-device:checkDebugAarMetadata
+> Task :capacitor-cordova-android-plugins:syncDebugLibJars
+> Task :capacitor-cordova-android-plugins:bundleDebugAar
+> Task :capacitor-cordova-android-plugins:assembleDebug
+> Task :capacitor-device:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-device:extractDebugAnnotations
+> Task :capacitor-device:extractDeepLinksForAarDebug
+> Task :capacitor-device:mergeDebugGeneratedProguardFiles
+> Task :capacitor-device:mergeDebugConsumerProguardFiles
+> Task :capacitor-device:prepareDebugArtProfile
+> Task :capacitor-device:prepareLintJarForPublish
+> Task :capacitor-device:mergeDebugJavaResource
+> Task :capacitor-network:checkDebugAarMetadata
+> Task :capacitor-device:syncDebugLibJars
+> Task :capacitor-device:bundleDebugAar
+> Task :capacitor-device:assembleDebug
+> Task :capacitor-network:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-network:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-network:extractDebugAnnotations
+> Task :capacitor-network:extractDeepLinksForAarDebug
+> Task :capacitor-network:mergeDebugGeneratedProguardFiles
+> Task :capacitor-network:mergeDebugConsumerProguardFiles
+> Task :capacitor-network:prepareDebugArtProfile
+> Task :capacitor-network:prepareLintJarForPublish
+> Task :capacitor-preferences:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-preferences:extractDebugAnnotations
+> Task :capacitor-network:mergeDebugJavaResource
+> Task :capacitor-preferences:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-preferences:checkDebugAarMetadata
+> Task :app:mergeLibDexDebug
+> Task :capacitor-network:syncDebugLibJars
+> Task :capacitor-network:bundleDebugAar
+> Task :capacitor-network:assembleDebug
+> Task :capacitor-preferences:extractDeepLinksForAarDebug
+> Task :capacitor-preferences:mergeDebugGeneratedProguardFiles
+> Task :capacitor-preferences:mergeDebugConsumerProguardFiles
+> Task :capacitor-preferences:prepareDebugArtProfile
+> Task :capacitor-preferences:prepareLintJarForPublish
+> Task :capacitor-preferences:mergeDebugJavaResource
+> Task :capacitor-preferences:syncDebugLibJars
+> Task :capacitor-preferences:bundleDebugAar
+> Task :capacitor-preferences:assembleDebug
+> Task :app:mergeExtDexDebug
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+[Incubating] Problems report is available at: file:///I:/Antigravity/finos---premium-financial-operating-system/android/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 49s
+255 actionable tasks: 255 executed

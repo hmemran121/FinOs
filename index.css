@@ -1,0 +1,173 @@
+@import "tailwindcss";
+@source "./App.tsx";
+@source "./components/**/*.tsx";
+@source "./store/**/*.tsx";
+
+:root {
+  --font-main: 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  /* Theme-specific (DEFAULT: DARK - NIGHT) */
+  --bg-color: #030305;
+  --bg-gradient: radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+
+  --text-main: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-dim: #3f3f46;
+
+  --surface-deep: #0a0a0c;
+  --surface-card: #0f0f12;
+  --surface-overlay: #121215;
+  --surface-glass: rgba(255, 255, 255, 0.03);
+
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+
+  --input-bg: #18181b;
+  --nav-bg: rgba(10, 10, 12, 0.8);
+  --glow-subtle: 0 0 20px rgba(59, 130, 246, 0.1);
+
+  /* Core Palette - Vibrant & Premium (Static) */
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-rose: #f43f5e;
+
+  font-family: var(--font-main);
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+}
+
+.light-mode {
+  --bg-color: #f0f4f8;
+  --bg-gradient: radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 40%),
+    linear-gradient(to bottom, #f8fafc, #f1f5f9);
+
+  --text-main: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+
+  --surface-deep: #ffffff;
+  --surface-card: #f8fafc;
+  --surface-overlay: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.8);
+
+  --border-glass: rgba(0, 0, 0, 0.08);
+  --border-subtle: rgba(0, 0, 0, 0.04);
+
+  --input-bg: #f8fafc;
+  --nav-bg: rgba(255, 255, 255, 0.85);
+  --glow-subtle: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
+
+  color-scheme: light;
+}
+
+.amoled-mode {
+  --bg-color: #000000;
+  --bg-gradient: none;
+  --surface-deep: #000000;
+  --surface-card: #000000;
+  --surface-overlay: #000000;
+  --input-bg: #0a0a0c;
+  --surface-glass: rgba(255, 255, 255, 0.015);
+  --border-glass: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.03);
+  --nav-bg: rgba(0, 0, 0, 0.95);
+
+  --text-main: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #52525b;
+  --text-dim: #27272a;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  background-image: var(--bg-gradient);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1), color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--glow-subtle);
+}
+
+.text-gradient {
+  background: linear-gradient(to right, var(--text-main), var(--text-muted));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.vibrant-gradient {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes pulse-subtle {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 4s ease-in-out infinite;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}

@@ -1,0 +1,7 @@
+{
+  "name": "FinOS - Premium Financial Operating System",
+  "description": "A high-end, Android-first personal finance manager with multi-wallet, channel-based accounting, and AI-powered insights.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
