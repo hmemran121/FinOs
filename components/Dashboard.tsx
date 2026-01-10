@@ -4,15 +4,24 @@ import { GlassCard } from './ui/GlassCard';
 import { ICON_MAP } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { getFinancialInsights, FinancialInsight } from '../services/gemini';
-import { ArrowUpRight, ArrowDownLeft, BrainCircuit, TrendingDown, RefreshCcw, ShieldCheck, Wallet, ArrowRightCircle, Grid, List, ShieldAlert, Layout, Target } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, BrainCircuit, TrendingDown, RefreshCcw, ShieldCheck, Wallet, ArrowRightCircle, Grid, List, ShieldAlert, Layout, Target, ChevronRight, Zap } from 'lucide-react';
 import HealthScoreCard from './HealthScoreCard';
 import FinancialTimeline from './FinancialTimeline';
+import SyncDiagnostics from './SyncDiagnostics';
 
 const Dashboard: React.FC = () => {
   const { totalBalance, availableAfterCommitments, walletsWithBalances, transactions, isCloudLoading, getCurrencySymbol, settings, setActiveTab } = useFinance();
   const [insights, setInsights] = useState<FinancialInsight[]>([]);
   const [displayBalance, setDisplayBalance] = useState(0);
   const [toolViewMode, setToolViewMode] = useState<'grid' | 'list'>('grid');
+
+  const isBN = settings.language === 'BN';
+  const isCompact = settings.compactMode;
+
+  const formatValue = (val: number, symbol?: string) => {
+    if (settings.privacyMode) return '••••••';
+    return (symbol || getCurrencySymbol(settings.currency)) + val.toLocaleString();
+  };
 
   useEffect(() => {
     const duration = 1000;
@@ -46,38 +55,53 @@ const Dashboard: React.FC = () => {
     .filter(t => t.type === 'EXPENSE')
     .reduce((acc, t) => acc + t.amount, 0);
 
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
   const incomeThisMonth = transactions
-    .filter(t => t.type === 'INCOME' && new Date(t.date).getMonth() === new Date().getMonth())
+    .filter(t => {
+      const d = new Date(t.date);
+      return t.type === 'INCOME' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    })
     .reduce((acc, t) => acc + t.amount, 0);
 
   const expenseThisMonth = transactions
-    .filter(t => t.type === 'EXPENSE' && new Date(t.date).getMonth() === new Date().getMonth())
+    .filter(t => {
+      const d = new Date(t.date);
+      return t.type === 'EXPENSE' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    })
     .reduce((acc, t) => acc + t.amount, 0);
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className={`flex flex-col ${isCompact ? 'gap-2 pt-2' : 'gap-4 pt-4'} animate-in fade-in slide-in-from-bottom-4 duration-700`}>
       {/* Total Balance & Summary Card */}
-      <GlassCard className="relative overflow-hidden bg-gradient-to-br from-blue-600/20 to-purple-600/10 border-blue-500/30 min-h-[220px] flex flex-col justify-between">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2" />
+      <GlassCard
+        className={`relative overflow-hidden border-[var(--accent-primary)]/30 flex flex-col justify-between ${isCompact ? 'min-h-[160px] p-4' : 'min-h-[220px] p-6'}`}
+        style={{ background: `linear-gradient(135deg, ${settings.accentColor}33, ${settings.accentColor}11)` }}
+      >
+        <div className="absolute top-0 right-0 w-32 h-32 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2" style={{ backgroundColor: settings.accentColor + '22' }} />
 
         <div className="flex justify-between items-start relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              <p className="text-[var(--text-muted)] text-xs font-black uppercase tracking-widest transition-colors">Global Net Worth</p>
-              {isCloudLoading && <RefreshCcw size={12} className="text-blue-500 animate-spin" />}
+              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: settings.accentColor }} />
+              <p className="text-[var(--text-muted)] text-xs font-black uppercase tracking-widest transition-colors">
+                {isBN ? 'মোট ব্যালেন্স' : 'Global Net Worth'}
+              </p>
+              {isCloudLoading && <RefreshCcw size={12} className="animate-spin" style={{ color: settings.accentColor }} />}
             </div>
-            <h1 className="text-5xl font-black tracking-tighter text-gradient py-2">
-              {getCurrencySymbol(settings.currency)}{displayBalance.toLocaleString()}
+            <h1 className={`${settings.privacyMode ? 'blur-md' : ''} text-5xl font-black tracking-tighter text-gradient py-2`}>
+              {formatValue(displayBalance)}
             </h1>
             <div className="flex items-center gap-2 mt-1 px-1">
-              <span className={`text-[9px] font-black uppercase tracking-widest ${availableAfterCommitments > 0 ? 'text-blue-400' : 'text-rose-500'}`}>
-                {getCurrencySymbol(settings.currency)}{availableAfterCommitments.toLocaleString()} Available After Commitments
+              <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-[9px] font-black uppercase tracking-widest ${availableAfterCommitments > 0 ? 'text-[var(--accent-primary)]' : 'text-rose-500'}`}>
+                {formatValue(availableAfterCommitments)} {isBN ? 'প্রতিশ্রুতি পরবর্তী অবশিষ্ট' : 'Available After Commitments'}
               </span>
             </div>
           </div>
           <div className="bg-[var(--surface-deep)] p-3 rounded-2xl backdrop-blur-3xl border border-[var(--border-glass)] shadow-2xl transition-all">
-            <ShieldCheck className="text-blue-500" size={20} />
+            <ShieldCheck style={{ color: settings.accentColor }} size={20} />
           </div>
         </div>
 
@@ -85,27 +109,27 @@ const Dashboard: React.FC = () => {
           <div className="flex flex-col gap-2 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 p-4 rounded-[24px] group transition-all">
             <div className="flex items-center gap-2 text-emerald-400">
               <ArrowUpRight size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Revenue Flow</span>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{isBN ? 'আয়' : 'Revenue Flow'}</span>
             </div>
-            <span className="text-lg font-black text-emerald-500">+{getCurrencySymbol(settings.currency)}{incomeThisMonth.toLocaleString()}</span>
+            <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-lg font-black text-emerald-500`}>+{formatValue(incomeThisMonth)}</span>
           </div>
 
           <div className="flex flex-col gap-2 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 p-4 rounded-[24px] group transition-all">
             <div className="flex items-center gap-2 text-rose-400">
               <ArrowDownLeft size={14} className="group-hover:-translate-x-0.5 group-hover:translate-y-0.5 transition-transform" />
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Burn Rate</span>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{isBN ? 'ব্যয়' : 'Burn Rate'}</span>
             </div>
-            <span className="text-lg font-black text-rose-500">-{getCurrencySymbol(settings.currency)}{expenseThisMonth.toLocaleString()}</span>
+            <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-lg font-black text-rose-500`}>-{formatValue(expenseThisMonth)}</span>
           </div>
         </div>
 
         <div className="mt-6 pt-5 border-t border-[var(--border-glass)] flex justify-between items-center relative z-10 transition-colors">
           <div className="flex items-center gap-2 text-[var(--text-muted)]">
             <TrendingDown size={14} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Total Outflow</span>
+            <span className="text-[9px] font-black uppercase tracking-widest">{isBN ? 'সর্বমোট ব্যয়' : 'Total Outflow'}</span>
           </div>
-          <span className="text-xs font-black text-rose-500/80 tracking-wider">
-            {getCurrencySymbol(settings.currency)}{allTimeExpenses.toLocaleString()}
+          <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-xs font-black text-rose-500/80 tracking-wider`}>
+            {formatValue(allTimeExpenses)}
           </span>
         </div>
       </GlassCard>
@@ -151,23 +175,34 @@ const Dashboard: React.FC = () => {
         <div className="flex justify-between items-center mb-4 px-2">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-500/10 rounded-xl border border-blue-500/20">
-              <Layout size={18} className="text-blue-400" />
+              <Zap size={18} className="text-blue-400" />
             </div>
-            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] transition-colors">System Tools</h2>
+            <h1 className="text-2xl font-black text-[var(--text-main)] italic tracking-tight transition-colors">
+              {settings.customAppName || 'FinOS Dashboard'}
+            </h1>
           </div>
-          <div className="flex bg-[var(--surface-deep)] p-1 rounded-xl border border-[var(--border-glass)] transition-colors">
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setToolViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-all ${toolViewMode === 'grid' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
+              onClick={() => setActiveTab('hub')}
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 rounded-full border border-blue-500/20 transition-all group"
             >
-              <Grid size={14} />
+              <span className="text-[9px] font-black uppercase tracking-widest text-blue-400">See All</span>
+              <ChevronRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
-            <button
-              onClick={() => setToolViewMode('list')}
-              className={`p-1.5 rounded-lg transition-all ${toolViewMode === 'list' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
-            >
-              <List size={14} />
-            </button>
+            <div className="flex bg-[var(--surface-deep)] p-1 rounded-xl border border-[var(--border-glass)] transition-colors">
+              <button
+                onClick={() => setToolViewMode('grid')}
+                className={`p-1.5 rounded-lg transition-all ${toolViewMode === 'grid' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
+              >
+                <Grid size={14} />
+              </button>
+              <button
+                onClick={() => setToolViewMode('list')}
+                className={`p-1.5 rounded-lg transition-all ${toolViewMode === 'list' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
+              >
+                <List size={14} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -223,16 +258,16 @@ const Dashboard: React.FC = () => {
             {toolViewMode === 'list' && <ArrowRightCircle size={18} className="text-[var(--text-dim)] group-hover:text-emerald-500 transition-colors" />}
           </GlassCard>
         </div>
-      </section>
+      </section >
 
       {/* Financial Health Intelligence */}
-      <HealthScoreCard />
+      {settings.showHealthScore && <HealthScoreCard />}
 
       {/* Liquidity Projection Hub */}
-      <FinancialTimeline />
+      < FinancialTimeline />
 
       {/* Quick Trend Chart */}
-      <section>
+      < section >
         <div className="flex items-center gap-3 mb-4 px-2">
           <div className="p-2 bg-blue-500/10 rounded-xl border border-blue-500/20">
             <TrendingDown size={18} className="text-blue-400" />
@@ -258,10 +293,13 @@ const Dashboard: React.FC = () => {
             </AreaChart>
           </ResponsiveContainer>
         </GlassCard>
-      </section>
+      </section >
+
+      {/* Real-time Sync Trace (Debug Mode) */}
+      < SyncDiagnostics />
 
       {/* Wallets Overview */}
-      <section className="mb-24">
+      < section className="mb-24" >
         <div className="flex justify-between items-center mb-3 px-1">
           <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] transition-colors">My Wallets</h2>
           <button className="text-blue-500 text-xs font-bold">See All</button>
@@ -275,20 +313,20 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div>
                   <p className="font-bold text-sm text-[var(--text-main)] transition-colors">{w.name}</p>
-                  <p className="text-xs text-[var(--text-muted)] capitalize transition-colors">{w.channels.length} Channels</p>
+                  <p className="text-xs text-[var(--text-muted)] capitalize transition-colors">{w.channels.length} {isBN ? 'চ্যানেল' : 'Channels'}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="font-bold text-sm text-[var(--text-main)] transition-colors">
-                  {getCurrencySymbol(w.currency)}{w.currentBalance.toLocaleString()}
+                <p className={`${settings.privacyMode ? 'blur-sm' : ''} font-bold text-sm text-[var(--text-main)] transition-colors`}>
+                  {formatValue(w.currentBalance, getCurrencySymbol(w.currency))}
                 </p>
                 <p className="text-[10px] text-[var(--text-muted)] transition-colors">{w.currency}</p>
               </div>
             </GlassCard>
           ))}
         </div>
-      </section>
-    </div>
+      </section >
+    </div >
   );
 };
 

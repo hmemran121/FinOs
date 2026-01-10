@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>FinOS Icon Generator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            font-family: system-ui;
+            color: white;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .icon-preview {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+
+        .icon-box {
+            text-align: center;
+        }
+
+        .icon-box h3 {
+            margin: 10px 0;
+            font-size: 14px;
+            color: #888;
+        }
+
+        canvas {
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .download-btn:hover {
+            background: #2563eb;
+        }
+
+        .instructions {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+
+        .instructions h2 {
+            margin-top: 0;
+        }
+
+        .instructions code {
+            background: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #3b82f6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎨 FinOS PWA Icon Generator</h1>
+
+        <div class="icon-preview">
+            <div class="icon-box">
+                <h3>512x512 (PWA)</h3>
+                <canvas id="icon512" width="512" height="512"></canvas>
+                <br>
+                <a href="#" class="download-btn" id="download512">Download PNG</a>
+            </div>
+
+            <div class="icon-box">
+                <h3>192x192 (PWA)</h3>
+                <canvas id="icon192" width="192" height="192"></canvas>
+                <br>
+                <a href="#" class="download-btn" id="download192">Download PNG</a>
+            </div>
+
+            <div class="icon-box">
+                <h3>32x32 (Favicon)</h3>
+                <canvas id="favicon" width="32" height="32"></canvas>
+                <br>
+                <a href="#" class="download-btn" id="downloadFavicon">Download ICO</a>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h2>📋 Installation Instructions</h2>
+            <ol>
+                <li>Click the download buttons above to save each icon</li>
+                <li>Save <code>pwa-512x512.png</code> to <code>/public</code> folder</li>
+                <li>Save <code>pwa-192x192.png</code> to <code>/public</code> folder</li>
+                <li>Save <code>favicon.ico</code> to <code>/public</code> folder</li>
+                <li>Icons are already configured in <code>vite.config.ts</code> ✅</li>
+                <li>Build your app: <code>npm run build</code></li>
+            </ol>
+            <p><strong>Note:</strong> You can customize the design by editing this HTML file and regenerating the icons.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Premium FinOS Icon Design
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            const scale = size / 512;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+
+            // Background gradient
+            const bgGradient = ctx.createLinearGradient(0, 0, size, size);
+            bgGradient.addColorStop(0, '#0a0a0a');
+            bgGradient.addColorStop(1, '#1a1a2e');
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, size, size);
+
+            // Main icon gradient
+            const iconGradient = ctx.createLinearGradient(0, 0, size, size);
+            iconGradient.addColorStop(0, '#3b82f6');
+            iconGradient.addColorStop(0.5, '#6366f1');
+            iconGradient.addColorStop(1, '#8b5cf6');
+
+            // Draw stylized "F" with financial elements
+            ctx.save();
+            ctx.translate(size / 2, size / 2);
+
+            // Outer glow
+            ctx.shadowColor = '#3b82f6';
+            ctx.shadowBlur = 30 * scale;
+
+            // Main "F" shape
+            ctx.fillStyle = iconGradient;
+            ctx.beginPath();
+
+            // Vertical bar
+            const barWidth = 80 * scale;
+            const barHeight = 280 * scale;
+            ctx.roundRect(-barWidth / 2 - 40 * scale, -barHeight / 2, barWidth, barHeight, 20 * scale);
+
+            // Top horizontal bar
+            ctx.roundRect(-barWidth / 2 - 40 * scale, -barHeight / 2, 200 * scale, barWidth, 20 * scale);
+
+            // Middle horizontal bar (shorter)
+            ctx.roundRect(-barWidth / 2 - 40 * scale, -20 * scale, 150 * scale, barWidth * 0.8, 15 * scale);
+
+            ctx.fill();
+
+            // Add coin/dollar symbol overlay
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.beginPath();
+            ctx.arc(60 * scale, 60 * scale, 50 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Inner highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.beginPath();
+            ctx.roundRect(-barWidth / 2 - 35 * scale, -barHeight / 2 + 5 * scale, barWidth - 10 * scale, barHeight - 10 * scale, 18 * scale);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Generate all icons
+        const sizes = [
+            { id: 'icon512', size: 512, downloadId: 'download512', filename: 'pwa-512x512.png' },
+            { id: 'icon192', size: 192, downloadId: 'download192', filename: 'pwa-192x192.png' },
+            { id: 'favicon', size: 32, downloadId: 'downloadFavicon', filename: 'favicon.ico' }
+        ];
+
+        sizes.forEach(({ id, size, downloadId, filename }) => {
+            const canvas = document.getElementById(id);
+            drawIcon(canvas, size);
+
+            // Setup download
+            document.getElementById(downloadId).addEventListener('click', (e) => {
+                e.preventDefault();
+                canvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+            });
+        });
+    </script>
+</body>
+
+</html>

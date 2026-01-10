@@ -125,7 +125,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
             {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-4 z-[1001] animate-in fade-in slide-in-from-top-4 zoom-in-95 duration-500 origin-top">
                     <GlassCard className="bg-[var(--surface-overlay)]/90 backdrop-blur-3xl border-white/5 shadow-[0_30px_90px_rgba(0,0,0,0.6)] max-h-80 overflow-y-auto no-scrollbar rounded-[32px] overflow-hidden p-2 border border-blue-500/10">
-                        <div className="pb-2 pt-1 px-4 flex items-center justify-between border-b border-white/5 mb-2">
+                        <div className="pb-1.5 pt-0.5 px-4 flex items-center justify-between border-b border-white/5 mb-1.5">
                             <div className="flex items-center gap-2">
                                 <Sparkles size={10} className="text-blue-500 animate-pulse" />
                                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-500/80">Strategy Library</span>
@@ -133,13 +133,13 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                             <span className="text-[8px] font-black font-mono text-white/20 italic">AI-Engine v2.0</span>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-0">
                             {suggestions.map((suggestion, index) => (
                                 <button
                                     key={index}
                                     type="button"
                                     onClick={() => handleSelect(suggestion)}
-                                    className="w-full text-left px-5 py-4 rounded-[22px] hover:bg-gradient-to-br hover:from-blue-500/10 hover:to-indigo-500/10 hover:text-white transition-all duration-300 text-sm font-bold text-[var(--text-main)] flex items-center gap-4 group/item relative overflow-hidden"
+                                    className="w-full text-left px-4 py-2.5 rounded-xl hover:bg-gradient-to-br hover:from-blue-500/10 hover:to-indigo-500/10 hover:text-white transition-all duration-300 text-sm font-bold text-[var(--text-main)] flex items-center gap-4 group/item relative overflow-hidden border-b border-white/5 last:border-0"
                                 >
                                     {/* Hover Shine */}
                                     <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 -translate-x-full group-hover/item:translate-x-full transition-transform duration-1000" />

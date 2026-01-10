@@ -53,7 +53,6 @@ export const CurrencyPickerOverlay: React.FC<CurrencyPickerOverlayProps> = ({
                     <div className="relative group">
                         <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] group-focus-within:text-blue-500 transition-colors" />
                         <input
-                            autoFocus
                             placeholder="Search system currencies..."
                             className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-[24px] py-5 pl-14 pr-6 text-xs font-bold outline-none focus:border-blue-500/50 transition-all placeholder:text-[var(--text-dim)] text-[var(--text-main)] shadow-inner"
                             value={searchCurrency}
@@ -63,7 +62,7 @@ export const CurrencyPickerOverlay: React.FC<CurrencyPickerOverlayProps> = ({
                 </div>
 
                 {/* Scrollable Territory */}
-                <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-3 no-scrollbar">
+                <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-0 no-scrollbar">
                     <div className="px-2 mb-4">
                         <span className="text-[9px] font-black uppercase tracking-[0.4em] text-[var(--text-muted)] italic">Primary Reservoirs</span>
                     </div>
@@ -84,10 +83,10 @@ export const CurrencyPickerOverlay: React.FC<CurrencyPickerOverlayProps> = ({
                                         onClose();
                                         setSearchCurrency('');
                                     }}
-                                    className={`w-full flex items-center justify-between p-4 rounded-[24px] border transition-all duration-300 group/item ${isActive ? 'bg-blue-600 border-blue-400 text-white shadow-lg' : 'bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-secondary)] hover:bg-[var(--surface-card)]'}`}
+                                    className={`w-full flex items-center justify-between p-2 rounded-xl border-b border-white/5 last:border-0 transition-all duration-300 group/item ${isActive ? 'bg-blue-600 border-blue-400 text-white shadow-lg z-10' : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--surface-card)]'}`}
                                 >
                                     <div className="flex items-center gap-5">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black transition-all ${isActive ? 'bg-white/20 text-white' : 'bg-[var(--surface-deep)] border border-[var(--border-glass)] text-blue-500 group-hover/item:scale-110'}`}>
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black transition-all ${isActive ? 'bg-white/20 text-white' : 'bg-[var(--surface-deep)] border border-[var(--border-glass)] text-blue-500 group-hover/item:scale-110'}`}>
                                             {currency.symbol}
                                         </div>
                                         <div className="text-left">
@@ -99,7 +98,7 @@ export const CurrencyPickerOverlay: React.FC<CurrencyPickerOverlayProps> = ({
                                         {isActive ? (
                                             <Check size={20} className="text-white" strokeWidth={4} />
                                         ) : (
-                                            <ChevronRight size={20} />
+                                            <ChevronRight size={18} />
                                         )}
                                     </div>
                                 </button>

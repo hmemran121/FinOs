@@ -167,7 +167,6 @@ const WalletForm: React.FC<WalletFormProps> = ({ onClose, editWallet }) => {
                             Wallet Identity <span className="text-rose-500">*</span>
                         </label>
                         <input
-                            autoFocus
                             type="text"
                             value={name}
                             onChange={e => setName(e.target.value)}

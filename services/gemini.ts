@@ -8,9 +8,16 @@ const API_KEY = (import.meta as any).env.VITE_GEMINI_API_KEY || "dummy_key";
 let aiInstance: GoogleGenAI | null = null;
 
 const getAi = () => {
-  if (API_KEY === "dummy_key") return null;
-  if (!aiInstance) {
-    aiInstance = new GoogleGenAI({ apiKey: API_KEY });
+  // Check localStorage for runtime custom key (Admin setting)
+  const customKey = localStorage.getItem('finos_custom_gemini_key');
+  const activeKey = customKey || API_KEY;
+
+  if (activeKey === "dummy_key") return null;
+
+  // Re-instantiate if key changed
+  if (!aiInstance || (aiInstance as any)._apiKey !== activeKey) {
+    aiInstance = new GoogleGenAI({ apiKey: activeKey });
+    (aiInstance as any)._apiKey = activeKey; // Track active key
   }
   return aiInstance;
 };
@@ -20,8 +27,21 @@ export interface FinancialInsight {
   urgency: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
+const CACHE_KEY = 'finos_ai_insights_cache';
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 export const getFinancialInsights = async (transactions: Transaction[], wallets: Wallet[]): Promise<FinancialInsight[]> => {
   try {
+    // 1. Check Cache
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_TTL) {
+        console.log("🤖 [AI] Using cached insights.");
+        return data;
+      }
+    }
+
     const context = `
       User Transactions: ${JSON.stringify(transactions.slice(0, 20))}
       User Wallets: ${JSON.stringify(wallets)}
@@ -51,13 +71,28 @@ export const getFinancialInsights = async (transactions: Transaction[], wallets:
       }
     });
 
-    // Extract text using the .text property getter directly.
     const text = response.text;
     if (!text) return [];
 
-    return JSON.parse(text) as FinancialInsight[];
-  } catch (error) {
+    const insights = JSON.parse(text) as FinancialInsight[];
+
+    // 2. Save Cache
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      data: insights,
+      timestamp: Date.now()
+    }));
+
+    return insights;
+  } catch (error: any) {
     console.error("AI Insights Error:", error);
+
+    // If rate limited, try to return expired cache if exists
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const { data } = JSON.parse(cached);
+      return data;
+    }
+
     return [
       { insight: "Track your expenses to see AI-powered insights here.", urgency: "LOW" },
       { insight: "Your food spending is looking stable this week.", urgency: "LOW" }

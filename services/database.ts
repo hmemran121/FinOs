@@ -89,24 +89,27 @@ class DatabaseKernel {
                 report(60, 'Opening Encrypted Vault...');
                 await this.db.open();
 
-                // 5. Performance & Reliability PRAGMAs
-                // These MUST be set outside of a transaction and ideally immediately after opening.
-                report(70, 'Optimizing SQLite Performance...');
-                try {
-                    // Try setting WAL mode. Note: This may fail if already in a transaction or if not supported.
-                    await this.db.execute('PRAGMA journal_mode = WAL;');
-                    await this.db.execute('PRAGMA synchronous = NORMAL;');
-                    await this.db.execute('PRAGMA foreign_keys = ON;');
-                } catch (e) {
-                    console.warn(' ⚠️ [Kernel] Optional optimizations failed or not supported:', e);
-                }
-
-                // 6. Emergency Cleanup (Bridge Hardening)
+                // 5. Emergency Cleanup (Bridge Hardening)
                 report(80, 'Clearing Bridge Anomalies...');
                 const txStatus = await this.db.isTransactionActive();
                 if (txStatus.result) {
                     console.warn(' ⚠️ [Kernel] Clearing dangling transaction...');
                     await this.db.rollbackTransaction();
+                }
+
+                // 6. Performance & Reliability PRAGMAs
+                report(85, 'Optimizing SQLite Performance...');
+                try {
+                    // Force commit any dangling implicit transactions before PRAGMA
+                    await this.db.execute('COMMIT;');
+                } catch (e) { }
+
+                try {
+                    await this.db.execute('PRAGMA journal_mode = WAL;');
+                    await this.db.execute('PRAGMA synchronous = NORMAL;');
+                    await this.db.execute('PRAGMA foreign_keys = ON;');
+                } catch (e) {
+                    console.warn(' ⚠️ [Kernel] Optional optimizations failed or not supported:', e);
                 }
 
                 // 7. Schema & Migrations
@@ -126,20 +129,49 @@ class DatabaseKernel {
         return this.initPromise;
     }
 
-    private currentSchemaVersion: number = 3;
+    private currentSchemaVersion: number = 23;
 
     private async applySchema() {
         if (!this.db) throw new Error('DB handle lost during schema application');
 
-        // 1. Meta Tables
+        // 0. Get current version
+        await this.db.execute(`CREATE TABLE IF NOT EXISTS meta_schema (version INTEGER PRIMARY KEY)`);
+        const verRes = await this.db.query('SELECT version FROM meta_schema');
+        let oldVersion = verRes.values && verRes.values.length > 0 ? verRes.values[0].version : 0;
+
+        console.log(`📡 [Kernel] Database Version Check: Current=${oldVersion}, Target=${this.currentSchemaVersion}`);
+
+        // 1. Meta Tables (Always ensures base meta)
         await this.db.execute(`
-            CREATE TABLE IF NOT EXISTS meta_schema (version INTEGER PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS meta_sync (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 is_initialized INTEGER DEFAULT 0,
-                last_full_sync INTEGER DEFAULT 0
+                last_full_sync INTEGER DEFAULT 0,
+                static_versions TEXT DEFAULT '{}',
+                last_user_sync_token INTEGER DEFAULT 0,
+                last_user_id TEXT
             );
-            INSERT OR IGNORE INTO meta_sync (id, is_initialized, last_full_sync) VALUES (1, 0, 0);
+        `);
+
+        // Hardening: Ensure static_versions column exists for existing users BEFORE we try to use it
+        try {
+            await this.db.execute(`ALTER TABLE meta_sync ADD COLUMN static_versions TEXT DEFAULT '{}'`);
+        } catch (e) { }
+
+        try {
+            await this.db.execute(`ALTER TABLE meta_sync ADD COLUMN last_user_sync_token INTEGER DEFAULT 0`);
+        } catch (e) { }
+
+        try {
+            await this.db.execute(`ALTER TABLE meta_sync ADD COLUMN last_user_id TEXT`);
+        } catch (e) { }
+
+        // Cleanup: Remove old columns is not supported in SQLite easily, so we just ignore them.
+
+        // Now safe to insert/ignore with the full column set
+        await this.db.execute(`
+            INSERT OR IGNORE INTO meta_sync (id, is_initialized, last_full_sync, static_versions, last_user_sync_token, last_user_id) 
+            VALUES (1, 0, 0, '{}', 0, NULL);
         `);
 
         const syncFields = `
@@ -159,15 +191,16 @@ class DatabaseKernel {
             channels: `id TEXT PRIMARY KEY, wallet_id TEXT NOT NULL, type TEXT NOT NULL, balance REAL DEFAULT 0, ${syncFields}, FOREIGN KEY(wallet_id) REFERENCES wallets(id)`,
             transactions: `id TEXT PRIMARY KEY, amount REAL NOT NULL, date TEXT NOT NULL, wallet_id TEXT, channel_type TEXT, category_id TEXT, note TEXT, type TEXT, is_split INTEGER DEFAULT 0, to_wallet_id TEXT, to_channel_type TEXT, linked_transaction_id TEXT, is_sub_ledger_sync INTEGER DEFAULT 0, sub_ledger_id TEXT, sub_ledger_name TEXT, ${syncFields}`,
             transfers: `id TEXT PRIMARY KEY, from_wallet_id TEXT NOT NULL, to_wallet_id TEXT NOT NULL, from_channel TEXT NOT NULL, to_channel TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, note TEXT, ${syncFields}`,
-            commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, next_date TEXT NOT NULL, ${syncFields}`,
+            commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, next_date TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', history TEXT DEFAULT '[]', is_recurring INTEGER DEFAULT 0, ${syncFields}`,
             budgets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, category_id TEXT, period TEXT, ${syncFields}`,
-            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, ${syncFields}`,
+            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, ${syncFields}`,
             currencies: `code TEXT PRIMARY KEY, name TEXT NOT NULL, symbol TEXT NOT NULL, ${syncFields}`,
             channel_types: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon_name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER DEFAULT 0, ${syncFields}`,
             financial_plans: `id TEXT PRIMARY KEY, wallet_id TEXT, plan_type TEXT, title TEXT, status TEXT, planned_date TEXT, finalized_at TEXT, total_amount REAL, note TEXT, ${syncFields}`,
-            financial_plan_components: `id TEXT PRIMARY KEY, plan_id TEXT, name TEXT, component_type TEXT, quantity REAL, unit TEXT, expected_cost REAL, final_cost REAL, category_id TEXT, group_id TEXT, ${syncFields}`,
+            financial_plan_components: `id TEXT PRIMARY KEY, plan_id TEXT, name TEXT, component_type TEXT, quantity REAL, unit TEXT, expected_cost REAL, final_cost REAL, category_id TEXT, group_id TEXT, group_parent_id TEXT, ${syncFields}`,
             financial_plan_settlements: `id TEXT PRIMARY KEY, plan_id TEXT, channel_id TEXT, amount REAL, ${syncFields}`,
-            plan_suggestions: `id TEXT PRIMARY KEY, name TEXT NOT NULL, usage_count INTEGER DEFAULT 0, ${syncFields}`
+            plan_suggestions: `id TEXT PRIMARY KEY, name TEXT NOT NULL, usage_count INTEGER DEFAULT 0, ${syncFields}`,
+            notifications: `id TEXT PRIMARY KEY, type TEXT, priority TEXT, title TEXT, message TEXT, is_read INTEGER DEFAULT 0, action_url TEXT, data TEXT, created_at INTEGER, ${syncFields}`
         };
 
         for (const [name, schema] of Object.entries(tables)) {
@@ -210,6 +243,76 @@ class DatabaseKernel {
         try {
             await this.db.execute(`ALTER TABLE categories_global ADD COLUMN parent_id TEXT`);
         } catch (e) { }
+
+        // v15: Group Pickup & Structural Hierarchy
+        if (oldVersion < 15) {
+            console.log("🛠️ [Database] Migrating to v15 (Grouping Support)...");
+            try {
+                await this.db.execute(`ALTER TABLE financial_plan_components ADD COLUMN group_id TEXT`);
+                console.log("✅ Column group_id added.");
+            } catch (e) { }
+            try {
+                await this.db.execute(`ALTER TABLE financial_plan_components ADD COLUMN group_parent_id TEXT`);
+                console.log("✅ Column group_parent_id added.");
+            } catch (e) { }
+        }
+
+        // Commitment Status Migration (v16)
+        try {
+            await this.db.execute(`ALTER TABLE commitments ADD COLUMN status TEXT DEFAULT 'ACTIVE'`);
+        } catch (e) { }
+
+        // Commitment History & Recurrence Migration (v17)
+        if (oldVersion < 17) {
+            console.log("🛠️ [Database] Migrating to v17 (Commitment History & Recurrence)...");
+            try {
+                await this.db.execute(`ALTER TABLE commitments ADD COLUMN history TEXT DEFAULT '[]'`);
+            } catch (e) { }
+            try {
+                await this.db.execute(`ALTER TABLE commitments ADD COLUMN is_recurring INTEGER DEFAULT 0`);
+            } catch (e) { }
+        }
+
+        // v19: Premium App Controls Migration
+        if (oldVersion < 19) {
+            console.log("🛠️ [Database] Migrating to v19 (Premium Controls)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN haptic_enabled INTEGER DEFAULT 1`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN animation_speed TEXT DEFAULT 'NORMAL'`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN default_wallet_id TEXT`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN auto_sync INTEGER DEFAULT 1`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN decimal_places INTEGER DEFAULT 2`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN show_health_score INTEGER DEFAULT 1`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN compact_mode INTEGER DEFAULT 0`); } catch (e) { }
+        }
+
+        // v20: Ultra-Pro Settings Migration
+        if (oldVersion < 20) {
+            console.log("🛠️ [Database] Migrating to v20 (Ultra-Pro Settings)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN low_balance_threshold REAL DEFAULT 100`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN font_family TEXT DEFAULT 'PLUS_JAKARTA'`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN animation_intensity TEXT DEFAULT 'MEDIUM'`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN biometric_lock_timeout INTEGER DEFAULT 0`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN sound_effects_enabled INTEGER DEFAULT 1`); } catch (e) { }
+        }
+
+        // v21: Administrative Governance Migration
+        if (oldVersion < 21) {
+            console.log("🛠️ [Database] Migrating to v21 (Admin Controls)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN is_admin_enabled INTEGER DEFAULT 0`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN custom_gemini_key TEXT`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN custom_supabase_url TEXT`); } catch (e) { }
+        }
+        if (oldVersion < 22) {
+            console.log("🛠️ [Database] Migrating to v22 (System Overrides)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN is_read_only INTEGER DEFAULT 0`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN maintenance_mode INTEGER DEFAULT 0`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN custom_app_name TEXT`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN glass_effects_enabled INTEGER DEFAULT 1`); } catch (e) { }
+        }
+        if (oldVersion < 23) {
+            console.log("🛠️ [Database] Migrating to v23 (Custom Logo Support)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN custom_logo_url TEXT`); } catch (e) { }
+        }
 
         // Taxonomy Modernization (v14) - One-time hard reset for the new hierarchical system
         try {
@@ -333,30 +436,63 @@ class DatabaseKernel {
         return uuidv4();
     }
 
+    async run(query: string, params: any[] = [], transaction: boolean = true) {
+        const db = await this.getDb();
+        return db.run(query, params, transaction);
+    }
+
+    async execute(statements: string, transaction: boolean = true) {
+        const db = await this.getDb();
+        return db.execute(statements, transaction);
+    }
+
+    private writeQueue: Promise<any> = Promise.resolve();
+
+    private async enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+        this.writeQueue = this.writeQueue.then(async () => {
+            try { return await task(); } catch (e) {
+                console.error("⛔ [Kernel] Write operation failed:", e);
+                return null;
+            }
+        });
+        return this.writeQueue as any;
+    }
+
     // High-level safe wrappers
     async insert(table: string, data: any, overwrite: boolean = false) {
-        const db = await this.getDb();
-        const keys = Object.keys(data);
-        const values = Object.values(data).map(v => v === undefined ? null : v);
-        const placeholders = keys.map(() => '?').join(',');
-        const cmd = overwrite ? 'INSERT OR REPLACE' : 'INSERT';
-        const query = `${cmd} INTO ${table} (${keys.join(',')}) VALUES (${placeholders})`;
-        await db.run(query, values);
+        return this.enqueueWrite(async () => {
+            const db = await this.getDb();
+            const keys = Object.keys(data);
+            const values = Object.values(data).map(v => v === undefined ? null : v);
+            const placeholders = keys.map(() => '?').join(',');
+            const cmd = overwrite ? 'INSERT OR REPLACE' : 'INSERT';
+            const query = `${cmd} INTO ${table} (${keys.join(',')}) VALUES (${placeholders})`;
+
+            const status = await db.isTransactionActive();
+            await db.run(query, values, !status.result);
+        });
     }
 
     async update(table: string, id: string, data: any) {
-        const db = await this.getDb();
-        const keys = Object.keys(data);
-        const values = Object.values(data).map(v => v === undefined ? null : v);
-        const sets = keys.map(k => `${k} = ?`).join(',');
-        const query = `UPDATE ${table} SET ${sets} WHERE id = ?`;
-        await db.run(query, [...values, id]);
+        return this.enqueueWrite(async () => {
+            const db = await this.getDb();
+            const keys = Object.keys(data);
+            const values = Object.values(data).map(v => v === undefined ? null : v);
+            const sets = keys.map(k => `${k} = ?`).join(',');
+            const query = `UPDATE ${table} SET ${sets} WHERE id = ?`;
+
+            const status = await db.isTransactionActive();
+            await db.run(query, [...values, id], !status.result);
+        });
     }
 
     async delete(table: string, id: string) {
-        const db = await this.getDb();
-        const now = Date.now();
-        await db.run(`UPDATE ${table} SET is_deleted = 1, updated_at = ? WHERE id = ?`, [now, id]);
+        return this.enqueueWrite(async () => {
+            const db = await this.getDb();
+            const now = Date.now();
+            const status = await db.isTransactionActive();
+            await db.run(`UPDATE ${table} SET is_deleted = 1, updated_at = ? WHERE id = ?`, [now, id], !status.result);
+        });
     }
 
     async query(table: string, where: string | null = null, params: any[] = []) {

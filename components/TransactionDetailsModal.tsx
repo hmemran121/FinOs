@@ -171,12 +171,25 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                     </div>
 
                     {/* Sub Ledger Info */}
-                    {transaction.isSubLedgerSync && (
-                        <div className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-1">Synced Record</p>
+                    {(transaction.isSubLedgerSync || transaction.subLedgerId) && (
+                        <div className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 active:bg-blue-500/20 transition-all cursor-pointer group"
+                            onClick={() => {
+                                setTimeout(() => setActiveTab('commitments'), 150);
+                                onClose();
+                            }}
+                        >
+                            <div className="flex justify-between items-center mb-1">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                                    {transaction.isSubLedgerSync ? 'Synced Record' : 'Obligation Settlement'}
+                                </p>
+                                <ArrowRight size={12} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
                             <p className="text-xs text-blue-300">
-                                This transaction was synced from <b>{transaction.subLedgerName || 'a Sub-Ledger'}</b>.
-                                Values are locked to maintain consistency.
+                                {transaction.isSubLedgerSync
+                                    ? `This transaction was synced from ${transaction.subLedgerName || 'a Sub-Ledger'}.`
+                                    : `This transaction settled the obligation: ${transaction.subLedgerName || 'Unnamed'}.`
+                                }
+                                <span className="block mt-1 font-bold">Click to view Obligation Ledger</span>
                             </p>
                         </div>
                     )}
@@ -196,10 +209,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         <button
                             className="py-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-rose-500 hover:text-white"
                             onClick={() => {
-                                if (confirm('Are you sure you want to delete this transaction?')) {
-                                    onDelete(transaction.id);
-                                    onClose();
-                                }
+                                onDelete(transaction.id);
+                                onClose();
                             }}
                         >
                             <Trash2 size={18} />

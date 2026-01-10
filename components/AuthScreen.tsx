@@ -1,12 +1,13 @@
-
 import React, { useState } from 'react';
 import { GlassCard } from './ui/GlassCard';
 import { supabase } from '../services/supabase';
+import { useFinance } from '../store/FinanceContext';
 import { Mail, Lock, Fingerprint, ArrowRight, Smartphone, ShieldCheck, KeyRound, User, ChevronLeft, AlertCircle } from 'lucide-react';
 
 type AuthMode = 'LOGIN' | 'SIGNUP' | 'FORGOT' | 'PHONE_REQUEST' | 'PHONE_VERIFY';
 
 const AuthScreen: React.FC = () => {
+  const { settings } = useFinance();
   const [mode, setMode] = useState<AuthMode>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -86,9 +87,22 @@ const AuthScreen: React.FC = () => {
       <div className="w-full max-w-sm space-y-8 relative">
         <div className="text-center space-y-3">
           <div className="inline-flex p-5 rounded-[35px] bg-[var(--surface-deep)] border border-[var(--border-glass)] shadow-2xl mb-2 transition-colors">
-            <Fingerprint size={48} className="text-blue-500" />
+            {settings.customLogoUrl ? (
+              <img
+                src={settings.customLogoUrl}
+                alt="FinOS"
+                className="w-12 h-12 object-contain"
+                onError={(e) => {
+                  console.error('Logo load error in AuthScreen');
+                  (e.target as HTMLImageElement).style.display = 'none';
+                  (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg class="w-12 h-12 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>';
+                }}
+              />
+            ) : (
+              <Fingerprint size={48} className="text-blue-500" />
+            )}
           </div>
-          <h1 className="text-4xl font-black tracking-tighter text-[var(--text-main)] transition-colors">FinOS</h1>
+          <h1 className="text-4xl font-black tracking-tighter text-[var(--text-main)] transition-colors">{settings.customAppName || 'FinOS'}</h1>
           <p className="text-[var(--text-muted)] text-xs font-black uppercase tracking-[0.2em] transition-colors">
             {mode === 'LOGIN' && 'System Authorization'}
             {mode === 'SIGNUP' && 'Create Core Identity'}

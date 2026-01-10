@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { suggestCategory } from '../services/gemini';
 import { ICON_MAP } from '../constants';
+import { format } from 'date-fns';
+import { PremiumCalendarPicker } from './ui/PremiumCalendarPicker';
 
 interface Props {
   onClose: () => void;
@@ -38,6 +40,8 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
+  const [transactionDate, setTransactionDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Removed calcExpr state to prevent logic desync. "amount" is the single source of truth.
 
@@ -79,14 +83,25 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
     return list.filter(c => c.name.toLowerCase().includes(searchCat.toLowerCase()));
   }, [categories, type, searchCat]);
 
-  // Hierarchical grouping for display
+  // Hierarchical grouping with integrated search logic
   const groupedCategories = useMemo(() => {
-    const roots = filteredCategories.filter(c => !c.parentId);
-    return roots.map(root => ({
-      root,
-      children: filteredCategories.filter(c => c.parentId === root.id)
-    })).filter(group => group.root || group.children.length > 0);
-  }, [filteredCategories]);
+    const query = searchCat.toLowerCase().trim();
+    const roots = categories.filter(c => c.type === type && !c.parentId && !c.isDisabled);
+
+    return roots.map(root => {
+      const children = categories.filter(c => c.parentId === root.id && !c.isDisabled);
+      const rootMatches = root.name.toLowerCase().includes(query);
+      const matchingChildren = children.filter(child => child.name.toLowerCase().includes(query));
+
+      if (!query || rootMatches || matchingChildren.length > 0) {
+        return {
+          root,
+          children: query && !rootMatches ? matchingChildren : children
+        };
+      }
+      return null;
+    }).filter((group): group is { root: Category; children: any[] } => group !== null);
+  }, [categories, type, searchCat]);
 
   const handleSuggest = async () => {
     if (!note || !amount || isTransfer) return;
@@ -106,15 +121,21 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || parseFloat(amount) <= 0) return;
+    let finalAmount = amount;
+    if (/[+\-*/]/.test(amount)) {
+      const evaluated = safeEvaluate(amount);
+      if (evaluated) finalAmount = evaluated;
+    }
+
+    if (!finalAmount || parseFloat(finalAmount) <= 0) return;
     if (!isTransfer && !categoryId) {
       alert('Please select a taxonomy segment');
       return;
     }
 
     addTransaction({
-      amount: parseFloat(amount),
-      date: new Date().toISOString(),
+      amount: parseFloat(finalAmount),
+      date: transactionDate.toISOString(),
       walletId,
       channelType: channelType,
       categoryId: isTransfer ? 'internal-transfer' : categoryId,
@@ -405,7 +426,6 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                     <div className="relative group">
                       <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] group-focus-within:text-blue-500 transition-colors" />
                       <input
-                        autoFocus
                         placeholder="Search system segments..."
                         className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-[24px] py-5 pl-14 pr-6 text-xs font-bold outline-none focus:border-blue-500/50 transition-all placeholder:text-[var(--text-dim)] text-[var(--text-main)] shadow-inner"
                         value={searchCat}
@@ -435,7 +455,7 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                             <div className="flex-1 h-[1px] bg-gradient-to-r from-[var(--border-glass)] to-transparent" />
                           </div>
 
-                          <div className="grid grid-cols-1 gap-1">
+                          <div className="grid grid-cols-1 gap-0">
                             {/* The Parent itself as an option */}
                             <button
                               onClick={() => {
@@ -443,12 +463,12 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                                 setShowCatPicker(false);
                                 setSearchCat('');
                               }}
-                              className={`group relative w-full flex items-center gap-3 p-3 rounded-[24px] border transition-all duration-300 ${categoryId === group.root.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_10px_30px_rgba(37,99,235,0.3)]' : 'bg-[var(--surface-deep)]/40 border-[var(--border-glass)] text-[var(--text-muted)] hover:bg-[var(--surface-deep)]/80 hover:border-blue-500/30'}`}
+                              className={`group relative w-full flex items-center gap-3 p-1.5 rounded-xl border-b border-white/5 last:border-0 transition-all duration-300 ${categoryId === group.root.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_10px_30px_rgba(37,99,235,0.3)] z-10' : 'bg-transparent text-[var(--text-muted)] hover:bg-[var(--surface-deep)]/80'}`}
                             >
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${categoryId === group.root.id ? 'bg-white/20' : 'bg-[var(--surface-deep)] shadow-inner'}`}>
+                              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${categoryId === group.root.id ? 'bg-white/20' : 'bg-[var(--surface-deep)] shadow-inner'}`}>
                                 {ICON_MAP[group.root.icon || 'Tag'] || <Layers size={20} />}
                               </div>
-                              <span className={`text-base font-bold ${categoryId === group.root.id ? 'text-white' : 'text-[var(--text-main)] transition-colors'}`}>General {group.root.name}</span>
+                              <span className={`text-sm font-bold ${categoryId === group.root.id ? 'text-white' : 'text-[var(--text-main)] transition-colors'}`}>General {group.root.name}</span>
                               {categoryId === group.root.id && <Check size={20} className="ml-auto" />}
                             </button>
 
@@ -461,15 +481,15 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                                   setShowCatPicker(false);
                                   setSearchCat('');
                                 }}
-                                className={`group relative w-full flex items-center gap-3 p-3 rounded-[24px] border transition-all duration-300 ${categoryId === child.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_10px_30px_rgba(37,99,235,0.3)]' : 'bg-transparent border-transparent text-[var(--text-muted)] hover:bg-[var(--surface-deep)]/40 hover:border-[var(--border-glass)]'}`}
+                                className={`group relative w-full flex items-center gap-3 p-1 rounded-xl border-b border-white/5 last:border-0 transition-all duration-300 ${categoryId === child.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_10px_30px_rgba(37,99,235,0.3)] z-10' : 'bg-transparent text-[var(--text-muted)] hover:bg-[var(--surface-deep)]/40'}`}
                               >
-                                <div className="w-12 h-12 flex items-center justify-center">
+                                <div className="w-10 h-10 flex items-center justify-center">
                                   <div className={`w-1.5 h-1.5 rounded-full ${categoryId === child.id ? 'bg-white' : 'bg-[var(--border-glass)] group-hover:bg-blue-500 transition-colors'}`} />
                                 </div>
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${categoryId === child.id ? 'bg-white/10' : 'bg-[var(--surface-deep)] border border-[var(--border-glass)]'}`}>
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${categoryId === child.id ? 'bg-white/10' : 'bg-[var(--surface-deep)] border border-[var(--border-glass)]'}`}>
                                   {ICON_MAP[child.icon || 'Tag'] || <Tag size={18} />}
                                 </div>
-                                <span className={`text-base font-medium ${categoryId === child.id ? 'text-white' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-main)] transition-colors'}`}>{child.name}</span>
+                                <span className={`text-sm font-medium ${categoryId === child.id ? 'text-white' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-main)] transition-colors'}`}>{child.name}</span>
                                 {categoryId === child.id && <Check size={20} className="ml-auto" />}
                               </button>
                             ))}
@@ -518,6 +538,41 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                   </button>
                 </div>
               </div>
+
+              {/* Transaction Date Picker */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] px-1 transition-colors">Temporal Placement</p>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(!showDatePicker)}
+                    className="w-full bg-[var(--surface-deep)] border border-[var(--border-glass)] rounded-[28px] p-5 flex items-center justify-between text-sm font-bold text-[var(--text-secondary)] transition-all active:scale-[0.98] hover:bg-[var(--surface-card)]"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-[var(--input-bg)] flex items-center justify-center text-blue-500 border border-[var(--border-glass)]">
+                        <History size={18} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Execution Day</p>
+                        <span className="text-[var(--text-main)]">{format(transactionDate, 'EEEE, MMMM dd, yyyy')}</span>
+                      </div>
+                    </div>
+                    <Plus className={`transition-transform duration-300 ${showDatePicker ? 'rotate-45 text-rose-500' : 'text-blue-500'}`} size={20} />
+                  </button>
+
+                  {showDatePicker && (
+                    <div className="mt-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                      <PremiumCalendarPicker
+                        selectedDate={transactionDate}
+                        onChange={(date) => {
+                          setTransactionDate(date);
+                          setShowDatePicker(false);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -541,13 +596,13 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
 // Internal components for clean structure
 
 const WalletPicker: React.FC<{ wallets: Wallet[], selectedId: string, onSelect: (id: string) => void, activeColor?: string }> = ({ wallets, selectedId, onSelect, activeColor = '#3B82F6' }) => (
-  <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+  <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
     {wallets.map(w => (
       <button
         key={w.id}
         type="button"
         onClick={() => onSelect(w.id)}
-        className={`flex items-center gap-3 px-4 py-3 min-w-[140px] rounded-2xl border transition-all duration-300 ${selectedId === w.id ? 'bg-[var(--surface-glass)] border-[var(--border-glass)]' : 'bg-[var(--surface-deep)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-glass)]'}`}
+        className={`flex items-center gap-2.5 px-3 py-2.5 min-w-[130px] rounded-2xl border transition-all duration-300 ${selectedId === w.id ? 'bg-[var(--surface-glass)] border-[var(--border-glass)]' : 'bg-[var(--surface-deep)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-glass)]'}`}
         style={{ borderColor: selectedId === w.id ? w.color : undefined }}
       >
         <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[var(--bg-color)] shadow-inner transition-colors" style={{ color: w.color }}>
@@ -570,7 +625,7 @@ const ChannelPicker: React.FC<{ selected: ChannelType, onSelect: (ch: ChannelTyp
         key={ch.id}
         type="button"
         onClick={() => onSelect(ch.id)}
-        className={`flex-1 py-3 px-4 min-w-[80px] text-[8px] font-black uppercase tracking-[0.2em] rounded-xl transition-all ${selected === ch.id ? 'bg-[var(--surface-deep)] text-blue-400 shadow-2xl border border-[var(--border-glass)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+        className={`flex-1 py-2 px-3 min-w-[70px] text-[8px] font-black uppercase tracking-[0.1em] rounded-xl transition-all ${selected === ch.id ? 'bg-[var(--surface-deep)] text-blue-400 shadow-2xl border border-[var(--border-glass)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
       >
         {ch.name}
       </button>

@@ -98,11 +98,19 @@ export interface Transaction extends SyncBase {
 
 export interface Budget extends SyncBase {
   id: string;
-  targetId: string;
-  limit: number;
-  spent: number;
-  type: 'SOFT' | 'HARD';
+  name: string;
+  amount: number;
+  categoryId: string;
   period: 'MONTHLY' | 'WEEKLY';
+  spent?: number; // Runtime calculated
+}
+
+export interface CommitmentEvent {
+  type: 'SETTLED' | 'POSTPONED' | 'MISSED' | 'CREATED';
+  date: string;
+  originalDate?: string;
+  note?: string;
+  amount?: number;
 }
 
 export interface Commitment extends SyncBase {
@@ -114,6 +122,9 @@ export interface Commitment extends SyncBase {
   type: CommitmentType;
   walletId?: string;
   nextDate: string;
+  status: 'ACTIVE' | 'SETTLED' | 'CANCELLED';
+  history?: CommitmentEvent[];
+  isRecurring?: boolean;
 }
 
 export interface Transfer extends SyncBase {
@@ -171,6 +182,8 @@ export interface PlanComponent extends SyncBase {
   expected_cost?: number;
   final_cost?: number;
   category_id?: string;
+  group_id?: string | null;
+  group_parent_id?: string | null;
 }
 
 export interface PlanSettlement extends SyncBase {
@@ -185,6 +198,31 @@ export interface AppSettings {
   theme: 'DARK' | 'LIGHT' | 'AMOLED';
   aiEnabled: boolean;
   biometricEnabled: boolean;
+  accentColor: string;
+  language: 'EN' | 'BN';
+  privacyMode: boolean;
+  glassIntensity: number;
+  budgetStartDay: number;
+  hapticEnabled: boolean;
+  animationSpeed: 'FAST' | 'NORMAL' | 'RELAXED';
+  defaultWalletId?: string;
+  autoSync: boolean;
+  decimalPlaces: number;
+  showHealthScore: boolean;
+  compactMode: boolean;
+  lowBalanceThreshold: number;
+  fontFamily: 'PLUS_JAKARTA' | 'INTER' | 'ROBOTO' | 'OUTFIT';
+  animationIntensity: 'LOW' | 'MEDIUM' | 'HIGH';
+  biometricLockTimeout: number; // in seconds
+  soundEffectsEnabled: boolean;
+  isAdminEnabled: boolean;
+  customGeminiKey?: string;
+  customSupabaseUrl?: string;
+  isReadOnly?: boolean;
+  maintenanceMode?: boolean;
+  customAppName?: string;
+  glassEffectsEnabled?: boolean;
+  customLogoUrl?: string;
 }
 
 export interface CurrencyConfig extends SyncBase {
@@ -201,12 +239,25 @@ export interface ChannelTypeConfig extends SyncBase {
   isDefault: boolean;
 }
 
+export interface AppNotification extends SyncBase {
+  id: string;
+  type: 'BALANCE_ALERT' | 'COMMITMENT_DUE' | 'PLAN_MILESTONE' | 'SYSTEM_ALERT';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  title: string;
+  message: string;
+  isRead: boolean;
+  actionUrl?: string;
+  data?: any; // JSON payload or object meta
+  created_at: number;
+}
+
 export interface AppState {
   wallets: Wallet[];
   categories: Category[];
   transactions: Transaction[];
   budgets: Budget[];
   commitments: Commitment[];
+  notifications: AppNotification[];
   currencies: CurrencyConfig[];
   channelTypes: ChannelTypeConfig[];
   financialPlans: FinancialPlan[];
@@ -227,8 +278,20 @@ export interface SyncStatusUI {
   pendingCount: number;
   pendingOperations?: SyncQueueItem[];
   lastSyncAt: number | null;
+  staticVersions: Record<string, number>;
+  userSyncToken: number;
+  serverStaticVersions?: Record<string, number>;
+  serverUserSyncToken?: number;
+  tableStatuses: Record<string, {
+    status: 'idle' | 'syncing' | 'completed' | 'error';
+    lastResult: string;
+    progress: number;
+    lastSyncTime?: number;
+  }>;
   error: string | null;
   isInitialized: boolean;
+  isGlobalInitialized: boolean;
+  userId?: string | null;
 }
 
 export interface SyncQueueItem {
@@ -245,4 +308,7 @@ export interface SyncQueueItem {
 export interface MetaSync {
   is_initialized: boolean;
   last_full_sync: number;
+  static_versions?: string; // JSON
+  last_user_sync_token: number;
+  last_user_id?: string;
 }

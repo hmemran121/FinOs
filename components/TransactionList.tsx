@@ -17,17 +17,21 @@ import {
   ArrowRightLeft,
   MoveRight,
   ExternalLink,
-  Link
+  Link,
+  Unlink
 } from 'lucide-react';
+import DynamicDeleteModal from './modals/DynamicDeleteModal';
 import TransactionDetailsModal from './TransactionDetailsModal';
 
 const TransactionList: React.FC = () => {
-  const { transactions, categories, wallets, deleteTransaction, getCurrencySymbol, settings, setActiveTab, setSelectedWalletId } = useFinance();
+  const { transactions, categories, wallets, deleteTransaction, formatCurrency, settings, setActiveTab, setSelectedWalletId } = useFinance();
+  const isBN = settings.language === 'BN';
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<MasterCategoryType | 'ALL'>('ALL');
   const [showFilters, setShowFilters] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const getCategory = (id: string) => categories.find(c => c.id === id);
   const getWallet = (id: string) => wallets.find(w => w.id === id);
@@ -36,6 +40,21 @@ const TransactionList: React.FC = () => {
     return transactions.filter(t => {
       const wallet = getWallet(t.walletId);
       const category = getCategory(t.categoryId);
+
+      // Sub-Ledger Filter Logic:
+      // 1. Never show transactions from a Sub-Ledger wallet in the main timeline
+      // 2. Only show transactions that are either in a Primary wallet OR are NOT a reference/sync transaction
+      const isSubLedgerWallet = !!wallet?.parentWalletId;
+      const isPrimary = !!wallet?.isPrimary;
+      const isSyncRef = !!t.isSubLedgerSync;
+
+      // Logic: If it's a sub-ledger wallet, don't show it here.
+      // If it's a primary wallet, show it (even if it's a sync ref).
+      // If it's a regular wallet, show it ONLY if it's NOT a sync ref (unlikely but safe).
+      const shouldShow = !isSubLedgerWallet && (isPrimary || !isSyncRef);
+
+      if (!shouldShow) return false;
+
       const matchesSearch =
         t.note.toLowerCase().includes(searchQuery.toLowerCase()) ||
         category?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -58,20 +77,23 @@ const TransactionList: React.FC = () => {
 
   const getDateLabel = (dateStr: string) => {
     const date = new Date(dateStr);
-    if (isToday(date)) return 'Today';
-    if (isYesterday(date)) return 'Yesterday';
-    return format(date, 'EEEE, MMM dd');
+    if (isToday(date)) return isBN ? 'আজ' : 'Today';
+    if (isYesterday(date)) return isBN ? 'গতকাল' : 'Yesterday';
+    return format(date, isBN ? 'EEEE, MMM dd' : 'EEEE, MMM dd'); // format handles locale if configured, but keeping it simple
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
+    <div className="space-y-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
       <div className="space-y-4 px-1">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-main)] transition-colors">Timeline</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-main)] transition-colors">
+            {isBN ? 'টাইমলাইন' : 'Timeline'}
+          </h1>
           <div className="flex gap-2">
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`p-2 rounded-xl border transition-all ${showFilters ? 'bg-blue-600 border-blue-500 text-white' : 'bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-muted)]'}`}
+              style={showFilters ? { backgroundColor: settings.accentColor, borderColor: settings.accentColor } : {}}
             >
               <Filter size={18} />
             </button>
@@ -82,10 +104,11 @@ const TransactionList: React.FC = () => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={18} />
           <input
             type="text"
-            placeholder="Search notes, wallets, or categories..."
+            placeholder={isBN ? 'সার্চ করুন...' : 'Search notes, wallets, or categories...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:border-blue-500/50 transition-all placeholder:text-[var(--text-muted)] font-medium text-[var(--text-main)]"
+            className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none transition-all placeholder:text-[var(--text-muted)] font-medium text-[var(--text-main)]"
+            style={{ borderColor: searchQuery ? settings.accentColor + '50' : '' }}
           />
         </div>
 
@@ -111,8 +134,8 @@ const TransactionList: React.FC = () => {
               <Calendar size={48} className="opacity-20 text-[var(--text-muted)]" />
             </div>
             <div className="space-y-1">
-              <p className="font-bold text-lg text-[var(--text-muted)]">Clear Skies</p>
-              <p className="text-sm max-w-[200px] mx-auto opacity-50 font-medium leading-relaxed">No transactions found.</p>
+              <p className="font-bold text-lg text-[var(--text-muted)]">{isBN ? 'কোন রেকর্ড নেই' : 'Clear Skies'}</p>
+              <p className="text-sm max-w-[200px] mx-auto opacity-50 font-medium leading-relaxed">{isBN ? 'আপনি এখনও কোন ট্রানজেকশন করেননি' : 'No transactions found.'}</p>
             </div>
           </div>
         ) : (
@@ -148,7 +171,7 @@ const TransactionList: React.FC = () => {
                               {/* ... Icon ... */}
                               <div
                                 className="w-12 h-12 rounded-2xl flex items-center justify-center border border-[var(--border-glass)] relative shrink-0 transition-colors"
-                                style={{ backgroundColor: isTransfer ? '#3B82F615' : `${cat?.color}15`, color: isTransfer ? '#3B82F6' : cat?.color }}
+                                style={{ backgroundColor: isTransfer ? `${settings.accentColor}15` : `${cat?.color}15`, color: isTransfer ? settings.accentColor : cat?.color }}
                               >
                                 {isTransfer ? <ArrowRightLeft size={20} /> : (ICON_MAP[cat?.icon || ''] || <Tag size={20} />)}
                                 {!isTransfer && (
@@ -181,10 +204,16 @@ const TransactionList: React.FC = () => {
                                     ) : (
                                       <>
                                         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--surface-deep)] rounded-md border border-[var(--border-glass)] transition-colors">
-                                          <WalletIcon size={10} style={{ color: wallet?.color }} />
+                                          <WalletIcon size={10} style={{ color: wallet?.color || '#94a3b8' }} />
                                           <span className={`text-[10px] font-bold truncate max-w-[80px] transition-colors ${wallet?.isPrimary ? 'text-blue-500' : 'text-[var(--text-muted)]'}`}>
-                                            {wallet?.name || 'Deleted Wallet'}
+                                            {wallet?.name || 'Unknown Wallet'}
                                           </span>
+                                          {!wallet && (
+                                            <div className="flex items-center gap-1 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 ml-1">
+                                              <Unlink size={8} className="text-amber-500" />
+                                              <span className="text-[7px] font-black uppercase text-amber-500 tracking-widest">Orphan</span>
+                                            </div>
+                                          )}
                                         </div>
                                         {t.isSubLedgerSync && t.subLedgerName && (
                                           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-500/10 rounded-md border border-blue-500/20">
@@ -208,7 +237,7 @@ const TransactionList: React.FC = () => {
                             </div>
                             <div className="text-right shrink-0 transition-transform duration-500 group-hover:-translate-x-12">
                               <p className={`font-black text-base tracking-tight transition-colors ${isTransfer ? 'text-blue-400' : (isIncome ? 'text-emerald-500' : 'text-[var(--text-main)]')}`}>
-                                {isTransfer ? '' : (isIncome ? '+' : '-')}{getCurrencySymbol(wallet?.currency)}{t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                {isTransfer ? '' : (isIncome ? '+' : '-')}{formatCurrency(t.amount, wallet?.currency)}
                               </p>
                               <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-tighter mt-1 transition-colors">
                                 {format(new Date(t.date), 'h:mm a')}
@@ -220,7 +249,7 @@ const TransactionList: React.FC = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                deleteTransaction(t.id);
+                                setDeleteId(t.id);
                               }}
                               className="h-full px-6 bg-rose-600 text-white flex items-center justify-center active:bg-rose-700 transition-colors"
                             >
@@ -241,16 +270,16 @@ const TransactionList: React.FC = () => {
         <div className="fixed bottom-28 left-1/2 -translate-x-1/2 w-[85%] max-w-xs animate-in slide-in-from-bottom-10 duration-500">
           <div className="bg-[var(--nav-bg)] backdrop-blur-xl border border-[var(--border-glass)] p-3 rounded-2xl flex justify-around items-center shadow-2xl transition-colors">
             <div className="text-center">
-              <p className="text-[8px] font-black uppercase text-[var(--text-muted)] tracking-widest transition-colors">Inflow</p>
+              <p className="text-[8px] font-black uppercase text-[var(--text-muted)] tracking-widest transition-colors">{isBN ? 'আয়' : 'Inflow'}</p>
               <p className="text-xs font-bold text-emerald-400">
-                +{getCurrencySymbol(settings.currency)}{filteredTransactions.filter(t => t.type === MasterCategoryType.INCOME).reduce((acc, t) => acc + t.amount, 0).toLocaleString()}
+                +{formatCurrency(filteredTransactions.filter(t => t.type === MasterCategoryType.INCOME).reduce((acc, t) => acc + t.amount, 0))}
               </p>
             </div>
             <div className="w-[1px] h-6 bg-[var(--border-glass)]" />
             <div className="text-center">
-              <p className="text-[8px] font-black uppercase text-[var(--text-muted)] tracking-widest transition-colors">Outflow</p>
+              <p className="text-[8px] font-black uppercase text-[var(--text-muted)] tracking-widest transition-colors">{isBN ? 'ব্যয়' : 'Outflow'}</p>
               <p className="text-xs font-bold text-rose-400">
-                -{getCurrencySymbol(settings.currency)}{filteredTransactions.filter(t => t.type === MasterCategoryType.EXPENSE).reduce((acc, t) => acc + t.amount, 0).toLocaleString()}
+                -{formatCurrency(filteredTransactions.filter(t => t.type === MasterCategoryType.EXPENSE).reduce((acc, t) => acc + t.amount, 0))}
               </p>
             </div>
           </div>
@@ -261,7 +290,22 @@ const TransactionList: React.FC = () => {
         transaction={selectedTransaction}
         isOpen={!!selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
-        onDelete={deleteTransaction}
+        onDelete={(id) => setDeleteId(id)}
+      />
+
+      <DynamicDeleteModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={(cascade) => {
+          if (deleteId) {
+            deleteTransaction(deleteId); // Scale cascade logic if needed for transactions
+            setDeleteId(null);
+          }
+        }}
+        title="Delete Transaction"
+        itemName="this transaction"
+        itemType="transaction"
+        hasDependencies={false}
       />
     </div>
   );

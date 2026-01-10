@@ -1,0 +1,4 @@
+ALTER TABLE profiles 
+ADD COLUMN IF NOT EXISTS is_admin_enabled INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS custom_gemini_key TEXT,
+ADD COLUMN IF NOT EXISTS custom_supabase_url TEXT;

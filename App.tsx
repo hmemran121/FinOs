@@ -1,16 +1,17 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { FinanceProvider, useFinance } from './store/FinanceContext';
-import Dashboard from './components/Dashboard';
+import ErrorBoundary from './components/ErrorBoundary';
+// Eagerly loaded components (needed immediately)
 import Wallets from './components/Wallets';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
-import CategoryManager from './components/CategoryManager';
-import CommitmentManager from './components/CommitmentManager';
 import Settings from './components/Settings';
 import AuthScreen from './components/AuthScreen';
 import BiometricLockScreen from './components/BiometricLockScreen';
-import FinancialPlans from './components/FinancialPlans';
+import SyncLockScreen from './components/SyncLockScreen';
+import AppHub from './components/AppHub';
+import NotificationInbox from './components/NotificationInbox';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 import {
   LayoutGrid,
@@ -18,113 +19,175 @@ import {
   History,
   Settings as SettingsIcon,
   Plus,
-  Grid,
-  ShieldAlert
+  ShieldAlert,
+  Library,
+  Bell
 } from 'lucide-react';
 
+// Lazy loaded components (loaded on demand)
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const CategoryManager = lazy(() => import('./components/CategoryManager'));
+const CommitmentManager = lazy(() => import('./components/CommitmentManager'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const FinancialPlans = lazy(() => import('./components/FinancialPlans'));
+
+// Loading fallback component
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="flex flex-col items-center gap-4">
+      <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+      <p className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-widest">Loading...</p>
+    </div>
+  </div>
+);
+
 const MainApp: React.FC = () => {
-  const { isLoggedIn, isLocked, activeTab, setActiveTab, settings } = useFinance();
+  const { isLoggedIn, isLocked, syncStatus, isBooting, activeTab, setActiveTab, settings, notifications, profile } = useFinance();
   const [showAdd, setShowAdd] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
-  console.log("FinOS: MainApp Rendered, isLoggedIn:", isLoggedIn);
+  const unreadCount = notifications ? notifications.filter(n => !n.isRead).length : 0;
 
-  React.useEffect(() => {
-    document.body.classList.remove('light-mode', 'amoled-mode');
-    if (settings.theme === 'LIGHT') {
-      document.body.classList.add('light-mode');
+  // Update favicon when logo changes
+  useEffect(() => {
+    if (settings.customLogoUrl) {
+      const favicon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+      if (favicon) {
+        favicon.href = settings.customLogoUrl;
+      } else {
+        const newFavicon = document.createElement('link');
+        newFavicon.rel = 'icon';
+        newFavicon.href = settings.customLogoUrl;
+        document.head.appendChild(newFavicon);
+      }
+    }
+  }, [settings.customLogoUrl]);
+
+  // Update document title with custom app name
+  useEffect(() => {
+    if (settings.customAppName) {
+      document.title = `${settings.customAppName} | Premium Finance`;
+    } else {
+      document.title = 'FinOS | Premium Finance';
+    }
+  }, [settings.customAppName]);
+
+  // Apply theme and styling
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--accent-primary', settings.accentColor);
+    root.style.setProperty('--glass-blur', `${settings.glassIntensity}px`);
+    const animSpeeds = { FAST: '0.2s', NORMAL: '0.5s', RELAXED: '1s' };
+    root.style.setProperty('--anim-speed', animSpeeds[settings.animationSpeed] || '0.5s');
+
+    root.style.setProperty('--glass-blur', settings.glassEffectsEnabled ? `${settings.glassIntensity}px` : '0px');
+
+    document.body.classList.remove('dark-mode', 'amoled-mode', 'no-glass');
+    if (settings.theme === 'DARK') {
+      document.body.classList.add('dark-mode');
     } else if (settings.theme === 'AMOLED') {
       document.body.classList.add('amoled-mode');
     }
-  }, [settings.theme]);
+    if (!settings.glassEffectsEnabled) document.body.classList.add('no-glass');
+  }, [settings.theme, settings.accentColor, settings.glassIntensity, settings.animationSpeed, settings.glassEffectsEnabled]);
 
-  if (!isLoggedIn) {
-    return <AuthScreen />;
+  if (isBooting) return <SyncLockScreen />;
+  if (!isLoggedIn) return <AuthScreen />;
+  if (isLocked) return <BiometricLockScreen />;
+  if (!syncStatus.isGlobalInitialized || !syncStatus.isInitialized || (profile && syncStatus.userId !== profile.id)) {
+    return <SyncLockScreen />;
   }
 
-  if (isLocked) {
-    return <BiometricLockScreen />;
+  if (settings.maintenanceMode && !settings.isAdminEnabled) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-center p-12 text-center flex-col justify-center items-center gap-6">
+        <div className="w-24 h-24 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center animate-pulse">
+          <ShieldAlert size={48} className="text-amber-500" />
+        </div>
+        <h1 className="text-3xl font-black text-white italic tracking-tighter uppercase">Maintenance In Progress</h1>
+        <p className="text-zinc-500 font-bold max-w-xs leading-relaxed">System core is temporarily locked for maintenance. Please check back later.</p>
+        <button onClick={() => window.location.reload()} className="px-8 py-3 bg-zinc-900 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white active:scale-95 transition-all">Refetch Node Status</button>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen pb-24 max-w-lg mx-auto bg-[var(--bg-color)] relative transition-colors duration-300">
+    <div className={`min-h-screen pb-24 max-w-lg mx-auto bg-[var(--bg-color)] relative transition-colors duration-300 ${settings.isReadOnly ? 'border-t-2 border-rose-500/30' : ''}`}>
       <header className="px-6 py-8 flex justify-between items-center sticky top-0 bg-[var(--nav-bg)] backdrop-blur-xl z-30 transition-colors duration-300">
         <div>
-          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-0.5">FinOS 3.0</h2>
-          <p className="text-lg font-extrabold tracking-tight text-[var(--text-main)] transition-colors">System Console</p>
+          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-0.5">{settings.customAppName || 'FinOS 3.0'}</h2>
+          <p className="text-lg font-extrabold tracking-tight text-[var(--text-main)] transition-colors">
+            {activeTab.toUpperCase()}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <SyncStatusIndicator />
           <button
-            onClick={() => setActiveTab('settings')}
-            className={`p-3 rounded-2xl border transition-all ${activeTab === 'settings' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-muted)]'}`}
+            onClick={() => setShowNotifications(true)}
+            className="p-3 rounded-2xl border bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-muted)] relative"
           >
-            <SettingsIcon size={20} />
+            <Bell size={20} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[var(--nav-bg)] bounce-in">
+                {unreadCount}
+              </span>
+            )}
           </button>
+          {settings.isAdminEnabled && (
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`p-3 rounded-2xl border transition-all ${activeTab === 'admin' ? 'bg-rose-600 border-rose-500 text-white' : 'bg-[var(--input-bg)] border-[var(--border-glass)] text-rose-500'}`}
+            >
+              <ShieldAlert size={20} />
+            </button>
+          )}
         </div>
       </header>
 
       <main className="px-6">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'wallets' && <Wallets />}
-        {activeTab === 'commitments' && <CommitmentManager />}
-        {activeTab === 'timeline' && <TransactionList />}
-        {activeTab === 'categories' && <CategoryManager />}
-        {activeTab === 'plans' && <FinancialPlans />}
-        {activeTab === 'settings' && <Settings />}
+        <Suspense fallback={<LoadingFallback />}>
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'wallets' && <Wallets />}
+          {activeTab === 'timeline' && <TransactionList />}
+          {activeTab === 'hub' && <AppHub />}
+          {activeTab === 'settings' && <Settings />}
+          {activeTab === 'admin' && <AdminPanel />}
+          {activeTab === 'commitments' && <CommitmentManager />}
+          {activeTab === 'categories' && <CategoryManager />}
+          {activeTab === 'plans' && <FinancialPlans />}
+        </Suspense>
       </main>
 
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-md bg-[var(--surface-overlay)]/70 backdrop-blur-[40px] rounded-[40px] p-4 shadow-[0_25px_80px_-15px_rgba(0,0,0,0.6)] z-40 flex items-center justify-between border border-white/10 ring-1 ring-white/5 transition-all duration-700 ease-in-out">
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-md bg-[var(--surface-overlay)]/70 backdrop-blur-[40px] rounded-[40px] p-4 shadow-[0_25px_80px_-15px_rgba(0,0,0,0.6)] z-40 flex items-center justify-between border border-white/10 ring-1 ring-white/5 transition-all duration-700">
         <div className="flex-1 flex items-center justify-around relative">
-          {/* Active Indicator Backdrop - Tightened & Refined */}
           <div
-            className="absolute h-16 bg-gradient-to-tr from-blue-600/30 to-indigo-600/20 rounded-full border border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.25)] transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)]"
+            className="absolute h-12 bg-gradient-to-tr from-blue-600/30 to-indigo-600/20 rounded-full border border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.25)] transition-all duration-700 top-1/2 -translate-y-1/2"
             style={{
               width: '18%',
-              left: activeTab === 'dashboard' ? '1%' : activeTab === 'wallets' ? '21%' : activeTab === 'timeline' ? '61%' : activeTab === 'settings' ? '81%' : '-100%',
-              opacity: ['dashboard', 'wallets', 'timeline', 'settings'].includes(activeTab) ? 1 : 0
+              left: activeTab === 'dashboard' ? '1%' : activeTab === 'wallets' ? '21%' : activeTab === 'timeline' ? '61%' : activeTab === 'hub' ? '81%' : '-100%',
+              opacity: ['dashboard', 'wallets', 'timeline', 'hub'].includes(activeTab) ? 1 : 0
             }}
           />
 
-          <NavButton
-            active={activeTab === 'dashboard'}
-            onClick={() => setActiveTab('dashboard')}
-            icon={<LayoutGrid size={22} />}
-          />
-          <NavButton
-            active={activeTab === 'wallets'}
-            onClick={() => setActiveTab('wallets')}
-            icon={<Wallet size={22} />}
-          />
-
-          {/* Invisible spacer for FAB */}
+          <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutGrid size={22} />} />
+          <NavButton active={activeTab === 'wallets'} onClick={() => setActiveTab('wallets')} icon={<Wallet size={22} />} />
           <div className="w-16" />
-
-          <NavButton
-            active={activeTab === 'timeline'}
-            onClick={() => setActiveTab('timeline')}
-            icon={<History size={22} />}
-          />
-          <NavButton
-            active={activeTab === 'settings'}
-            onClick={() => setActiveTab('settings')}
-            icon={<SettingsIcon size={22} />}
-          />
+          <NavButton active={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')} icon={<History size={22} />} />
+          <NavButton active={activeTab === 'hub'} icon={<Library size={22} />} onClick={() => setActiveTab('hub')} />
         </div>
 
-        {/* Floating Action Button - Center Positioned Overlay */}
         <div className="absolute left-1/2 -translate-x-1/2 -top-10">
           <button
             onClick={() => setShowAdd(true)}
             className="w-20 h-20 bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-500 rounded-full flex items-center justify-center text-white shadow-[0_15px_40px_rgba(37,99,235,0.6)] ring-8 ring-[var(--bg-color)] active:scale-75 transition-all duration-500 group relative overflow-hidden"
           >
-            <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="absolute inset-x-0 -bottom-full h-full bg-white/10 blur-xl group-active:bottom-0 transition-all duration-500" />
-            <Plus size={36} strokeWidth={3} className="relative z-10 group-active:rotate-90 transition-transform duration-500" />
+            <Plus size={36} strokeWidth={3} className="relative z-10" />
           </button>
         </div>
       </nav>
 
       {showAdd && <TransactionForm onClose={() => setShowAdd(false)} />}
+      {showNotifications && <NotificationInbox onClose={() => setShowNotifications(false)} />}
     </div>
   );
 };
@@ -132,20 +195,20 @@ const MainApp: React.FC = () => {
 const NavButton: React.FC<{ active: boolean, onClick: () => void, icon: React.ReactNode }> = ({ active, onClick, icon }) => (
   <button
     onClick={onClick}
-    className={`relative z-10 flex flex-col items-center justify-center transition-all duration-500 py-3 min-w-[56px] group/navitem ${active ? 'text-white' : 'text-[var(--text-muted)]'}`}
+    className={`relative z-10 flex flex-col items-center justify-center transition-all duration-500 py-3 min-w-[56px] ${active ? 'text-white' : 'text-[var(--text-muted)]'}`}
   >
-    <div className={`transition-all duration-500 ${active
-      ? 'scale-125 -translate-y-1 drop-shadow-[0_0_15px_rgba(59,130,246,0.8)] text-white'
-      : 'scale-100 opacity-40 group-hover/navitem:opacity-100 group-hover/navitem:scale-110 group-hover/navitem:drop-shadow-[0_5px_15px_rgba(0,0,0,0.8)] group-hover/navitem:text-white'}`}>
+    <div className={`transition-all duration-500 ${active ? 'scale-125 drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]' : 'scale-100 opacity-40 hover:opacity-100 hover:scale-110'}`}>
       {icon}
     </div>
   </button>
 );
 
 const App: React.FC = () => (
-  <FinanceProvider>
-    <MainApp />
-  </FinanceProvider>
+  <ErrorBoundary>
+    <FinanceProvider>
+      <MainApp />
+    </FinanceProvider>
+  </ErrorBoundary>
 );
 
 export default App;

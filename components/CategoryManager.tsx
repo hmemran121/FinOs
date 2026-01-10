@@ -14,14 +14,17 @@ import {
   Shield,
   Sparkles,
   Search,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
+import DynamicDeleteModal from './modals/DynamicDeleteModal';
 
 const CategoryManager: React.FC = () => {
-  const { categories, addCategory, toggleCategoryStatus, updateCategory } = useFinance();
+  const { categories, addCategory, deleteCategory, toggleCategoryStatus, updateCategory } = useFinance();
   const [activeTab, setActiveTab] = useState<MasterCategoryType>(MasterCategoryType.EXPENSE);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const toggleExpand = (id: string) => {
     const next = new Set(expanded);
@@ -65,7 +68,7 @@ const CategoryManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="px-1 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-main)] transition-colors">Taxonomy</h1>
@@ -110,7 +113,7 @@ const CategoryManager: React.FC = () => {
             <div key={cat.id} className="relative">
               <button
                 onClick={() => toggleExpand(cat.id)}
-                className={`w-full group rounded-[32px] p-5 border transition-all duration-500 flex flex-col items-center text-center gap-4 relative overflow-hidden ${isSel ? 'bg-blue-600 border-blue-400 text-white shadow-2xl' : 'bg-[var(--surface-deep)] border-[var(--border-glass)] text-[var(--text-muted)] hover:border-blue-500/50'}`}
+                className={`w-full group rounded-[32px] p-2.5 border transition-all duration-500 flex flex-col items-center text-center gap-4 relative overflow-hidden ${isSel ? 'bg-blue-600 border-blue-400 text-white shadow-2xl' : 'bg-[var(--surface-deep)] border-[var(--border-glass)] text-[var(--text-muted)] hover:border-blue-500/50'}`}
               >
                 {isSel && <div className="absolute inset-0 bg-blue-400 blur-3xl opacity-20 animate-pulse" />}
                 <div className={`w-14 h-14 rounded-[22px] flex items-center justify-center transition-all duration-700 group-hover:rotate-12 group-hover:scale-110 ${isSel ? 'bg-white/20' : 'bg-[var(--input-bg)] border border-[var(--border-glass)]'}`} style={{ color: isSel ? 'white' : cat.color }}>
@@ -134,6 +137,7 @@ const CategoryManager: React.FC = () => {
                 <div className="absolute top-2 right-2 flex flex-col gap-1 z-20 animate-in zoom-in duration-300">
                   <button onClick={() => { setParentForNew(cat.id); setIsAdding(true); }} className="p-2 bg-white/20 backdrop-blur-md rounded-lg text-white hover:bg-white/30 transition-all"><Plus size={12} /></button>
                   <button onClick={() => toggleCategoryStatus(cat.id)} className="p-2 bg-white/20 backdrop-blur-md rounded-lg text-white hover:bg-white/30 transition-all">{cat.isDisabled ? <EyeOff size={12} /> : <Eye size={12} />}</button>
+                  {!cat.isGlobal && <button onClick={() => setDeleteId(cat.id)} className="p-2 bg-rose-500/40 backdrop-blur-md rounded-lg text-white hover:bg-rose-500/60 transition-all"><Trash2 size={12} /></button>}
                 </div>
               )}
             </div>
@@ -155,10 +159,10 @@ const CategoryManager: React.FC = () => {
               <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">{cat.name} Portfolio</h4>
               <div className="flex-1 h-[1px] bg-gradient-to-r from-blue-500/20 to-transparent" />
             </div>
-            <div className="grid grid-cols-1 gap-1.5">
+            <div className="grid grid-cols-1 gap-0">
               {children.map(child => (
                 <div key={child.id} className="relative group overflow-hidden rounded-2xl">
-                  <div className={`p-4 bg-[var(--surface-deep)] border border-[var(--border-glass)] rounded-2xl flex items-center justify-between transition-all hover:border-blue-500/30 ${child.isDisabled ? 'opacity-40' : ''}`}>
+                  <div className={`p-1.5 bg-transparent border-b border-white/5 last:border-0 flex items-center justify-between transition-all hover:bg-white/5 ${child.isDisabled ? 'opacity-40' : ''}`}>
                     <div className="flex items-center gap-4">
                       <div className="w-8 h-8 rounded-lg bg-[var(--input-bg)] flex items-center justify-center text-[var(--text-dim)]" style={{ color: child.color }}>
                         {ICON_MAP[child.icon]}
@@ -166,8 +170,9 @@ const CategoryManager: React.FC = () => {
                       <span className="text-sm font-bold text-[var(--text-main)]">{child.name}</span>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => updateCategory(child.id, {})} className="p-2 text-[var(--text-muted)] hover:text-blue-500 transition-colors"><Edit2 size={14} /></button>
-                      <button onClick={() => toggleCategoryStatus(child.id)} className="p-2 text-[var(--text-muted)] hover:text-rose-500 transition-colors">{child.isDisabled ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                      <button onClick={() => { setParentForNew(child.id); setIsAdding(true); }} className="p-2 text-[var(--text-muted)] hover:text-blue-500 transition-colors"><Plus size={14} /></button>
+                      <button onClick={() => toggleCategoryStatus(child.id)} className="p-2 text-[var(--text-muted)] hover:text-blue-500 transition-colors">{child.isDisabled ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                      {!child.isGlobal && <button onClick={() => setDeleteId(child.id)} className="p-2 text-[var(--text-muted)] hover:text-rose-500 transition-colors"><Trash2 size={14} /></button>}
                     </div>
                   </div>
                 </div>
@@ -187,7 +192,6 @@ const CategoryManager: React.FC = () => {
               </p>
             )}
             <input
-              autoFocus
               className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-xl p-4 text-sm font-bold outline-none focus:border-blue-500 text-[var(--text-main)] transition-colors"
               placeholder="Category Name"
               value={newCatName}
@@ -200,6 +204,22 @@ const CategoryManager: React.FC = () => {
           </GlassCard>
         </div>
       )}
+
+      <DynamicDeleteModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={() => {
+          if (deleteId) {
+            deleteCategory(deleteId);
+            setDeleteId(null);
+          }
+        }}
+        title="Delete Category"
+        itemName={categories.find(c => c.id === deleteId)?.name || 'this category'}
+        itemType="category"
+        hasDependencies={true}
+        dependencyText="Deleting this category will mark any associated transactions as 'Uncategorized'."
+      />
     </div>
   );
 };
