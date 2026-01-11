@@ -56,9 +56,9 @@ const TransactionList: React.FC = () => {
       if (!shouldShow) return false;
 
       const matchesSearch =
-        t.note.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        category?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        wallet?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        (t.note || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (category?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (wallet?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesType = filterType === 'ALL' || t.type === filterType;
       return matchesSearch && matchesType;

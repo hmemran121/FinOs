@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import DynamicDeleteModal from './modals/DynamicDeleteModal';
 
+import { generateEmbedding } from '../services/gemini';
+
 const CategoryManager: React.FC = () => {
   const { categories, addCategory, deleteCategory, toggleCategoryStatus, updateCategory } = useFinance();
   const [activeTab, setActiveTab] = useState<MasterCategoryType>(MasterCategoryType.EXPENSE);
@@ -47,13 +49,20 @@ const CategoryManager: React.FC = () => {
     return categories.filter(c => c.parentId === parentId);
   };
 
+
   const [isAdding, setIsAdding] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [parentForNew, setParentForNew] = useState<string | undefined>(undefined);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newCatName) return;
-    addCategory({
+    setIsGenerating(true);
+
+    // Auto-generate embedding
+    const embedding = await generateEmbedding(newCatName);
+
+    await addCategory({
       name: newCatName,
       icon: 'Sparkles',
       color: COLORS.accent,
@@ -61,10 +70,13 @@ const CategoryManager: React.FC = () => {
       parentId: parentForNew,
       isDisabled: false,
       isGlobal: false,
-      order: 10
+      order: 10,
+      embedding: embedding || undefined
     });
+
     setNewCatName('');
     setIsAdding(false);
+    setIsGenerating(false);
   };
 
   return (

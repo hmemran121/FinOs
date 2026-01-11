@@ -119,6 +119,7 @@ interface FinanceContextType extends AppState {
   suggestedObligationNames: string[];
   formatCurrency: (amount: number, currencyCode?: string) => string;
   isBooting: boolean;
+  state: AppState; // Exposed for advanced usage (AdminPanel)
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -164,7 +165,10 @@ const DEFAULT_STATE: AppState = {
     maintenanceMode: false,
     customAppName: 'FinOS',
     glassEffectsEnabled: true,
-    customLogoUrl: undefined
+    customLogoUrl: localStorage.getItem('finos_custom_logo_url') || undefined,
+    geminiKeys: localStorage.getItem('finos_gemini_keys') ? JSON.parse(localStorage.getItem('finos_gemini_keys')!) : [],
+    preferredGeminiKeyID: localStorage.getItem('finos_preferred_key_id') || undefined,
+    preferredGeminiModel: localStorage.getItem('finos_preferred_model') || undefined,
   },
   sync_status: {
     isOnline: true,
@@ -182,7 +186,8 @@ const DEFAULT_STATE: AppState = {
     isInitialized: false,
     isGlobalInitialized: false,
     userId: null
-  }
+  },
+  activeGeminiKeyId: localStorage.getItem('finos_preferred_key_id') || null
 };
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }: { children: React.ReactNode }) => {
@@ -372,6 +377,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const hasLegacy = categoriesGlobal.some((c: any) => !c.id.startsWith('cat_') || ['cat_food', 'cat_miscellaneous', 'cat_shopping'].includes(c.id));
 
       if (!hasModern && (hasLegacy || categoriesGlobal.length > 5)) {
+        console.warn("🧼 [Kernel] Legacy categories detected. Purging and re-syncing...");
         await databaseKernel.execute("DELETE FROM categories_global");
         await databaseKernel.execute("DELETE FROM categories_user");
         await databaseKernel.run('UPDATE meta_sync SET last_full_sync = 0 WHERE id = 1');
@@ -433,10 +439,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setState((prev: AppState) => {
         let profile = prev.profile;
         let settings = prev.settings;
+        let activeKeyFromDB = prev.activeGeminiKeyId;
         if (profiles && profiles.length > 0) {
           const p = profiles[0] as any;
-          profile = { id: p.id, name: p.name || profile.name, email: p.email || profile.email };
+          const dbVersion = p.version || 1;
+          const localVersion = profile.version || 1;
+          const isStaleDB = dbVersion < localVersion;
+
+          if (isStaleDB) {
+            console.warn(`⚠️ [FinanceContext] DB Profile Version (${dbVersion}) < Local Version (${localVersion}). Preserving local settings.`);
+          }
+
+          profile = { id: p.id, name: p.name || profile.name, email: p.email || profile.email, version: Math.max(dbVersion, localVersion) };
+          const dbGeminiKeys = p.gemini_keys ? JSON.parse(p.gemini_keys) : [];
+
           const newSettings = {
+            ...settings,
             currency: p.currency || settings.currency,
             theme: (p.theme || settings.theme) as 'DARK' | 'LIGHT' | 'AMOLED',
             aiEnabled: p.ai_enabled === 1,
@@ -444,38 +462,45 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             accentColor: p.accent_color || settings.accentColor,
             language: (p.language || settings.language) as 'EN' | 'BN',
             privacyMode: p.privacy_mode === 1,
-            glassIntensity: p.glass_intensity !== undefined ? p.glass_intensity : settings.glassIntensity,
-            budgetStartDay: p.budget_start_day !== undefined ? p.budget_start_day : settings.budgetStartDay,
-            hapticEnabled: p.haptic_enabled !== 0,
-            animationSpeed: (p.animation_speed || settings.animationSpeed) as any,
-            defaultWalletId: p.default_wallet_id,
-            autoSync: p.auto_sync !== 0,
-            decimalPlaces: p.decimal_places !== undefined ? p.decimal_places : settings.decimalPlaces,
-            showHealthScore: p.show_health_score !== 0,
+            glassIntensity: p.glass_intensity ?? settings.glassIntensity,
+            budgetStartDay: p.budget_start_day ?? settings.budgetStartDay,
+            hapticEnabled: p.haptic_enabled === 1,
+            animationSpeed: (p.animation_speed || settings.animationSpeed) as 'FAST' | 'NORMAL' | 'RELAXED',
+            defaultWalletId: p.default_wallet_id || settings.defaultWalletId,
+            autoSync: p.auto_sync === 1,
+            decimalPlaces: p.decimal_places ?? settings.decimalPlaces,
+            showHealthScore: p.show_health_score === 1,
             compactMode: p.compact_mode === 1,
-            lowBalanceThreshold: p.low_balance_threshold !== undefined ? p.low_balance_threshold : settings.lowBalanceThreshold,
+            lowBalanceThreshold: p.low_balance_threshold ?? settings.lowBalanceThreshold,
             fontFamily: (p.font_family || settings.fontFamily) as any,
-            animationIntensity: (p.animation_intensity || settings.animationIntensity) as any,
-            biometricLockTimeout: p.biometric_lock_timeout !== undefined ? p.biometric_lock_timeout : settings.biometricLockTimeout,
-            soundEffectsEnabled: p.sound_effects_enabled !== 0,
+            animationIntensity: (p.animation_intensity || settings.animationIntensity) as 'LOW' | 'MEDIUM' | 'HIGH',
+            biometricLockTimeout: p.biometric_lock_timeout ?? settings.biometricLockTimeout,
+            soundEffectsEnabled: p.sound_effects_enabled === 1,
             isAdminEnabled: p.is_admin_enabled === 1,
-            customGeminiKey: p.custom_gemini_key,
-            customSupabaseUrl: p.custom_supabase_url,
+            customGeminiKey: p.custom_gemini_key || settings.customGeminiKey,
+            customSupabaseUrl: p.custom_supabase_url || settings.customSupabaseUrl,
             isReadOnly: p.is_read_only === 1,
             maintenanceMode: p.maintenance_mode === 1,
-            customAppName: p.custom_app_name || 'FinOS',
-            glassEffectsEnabled: p.glass_effects_enabled !== 0,
-            customLogoUrl: p.custom_logo_url || localStorage.getItem('finos_custom_logo_url') || undefined
+            customAppName: p.custom_app_name || settings.customAppName,
+            glassEffectsEnabled: p.glass_effects_enabled === 1,
+            customLogoUrl: p.custom_logo_url || settings.customLogoUrl,
+            preferredGeminiKeyID: p.preferred_gemini_key_id || settings.preferredGeminiKeyID,
+            preferredGeminiModel: p.preferred_gemini_model || settings.preferredGeminiModel,
+            geminiKeys: (isStaleDB)
+              ? settings.geminiKeys
+              : (dbGeminiKeys.length > 0 ? dbGeminiKeys : settings.geminiKeys)
           };
-          console.log('📊 Loaded settings, customLogoUrl:', newSettings.customLogoUrl);
+          activeKeyFromDB = p.preferred_gemini_key_id || activeKeyFromDB;
           settings = newSettings;
         }
+
         return {
           ...prev,
           wallets: mappedWallets,
           transactions: mappedTransactions,
           categories: mappedCategories,
           budgets: mappedBudgets,
+          activeGeminiKeyId: activeKeyFromDB,
           commitments: commitments.map((c: any) => {
             let parsedHistory: any[] = [];
             try {
@@ -487,7 +512,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   try {
                     parsedHistory = JSON.parse(raw);
                   } catch (e) {
-                    // Fallback for partial data
                     if (raw.includes('{') || raw.includes('[')) {
                       const match = raw.match(/\[.*\]|\{.*\}/s);
                       if (match) parsedHistory = JSON.parse(match[0]);
@@ -498,11 +522,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   if (decoded !== '') parsedHistory = JSON.parse(decoded);
                 }
               }
-              // Ensure it's always an array
               if (!Array.isArray(parsedHistory)) parsedHistory = [];
-
-              // Repair: If history is empty, add a default CREATED event
-              if (!Array.isArray(parsedHistory) || parsedHistory.length === 0) {
+              if (parsedHistory.length === 0) {
                 parsedHistory = [{
                   type: 'CREATED',
                   date: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
@@ -527,7 +548,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           channelTypes: channelTypes.map((c: any) => ({ ...c, id: c.id, name: c.name, iconName: c.icon_name, color: c.color, isDefault: !!c.is_default })),
           financialPlans: plans.map((p: any) => ({
             ...p,
-            components: components.filter((c: any) => c.plan_id === p.id),
+            components: components.filter((comp: any) => comp.plan_id === p.id),
             settlements: settlements.filter((s: any) => s.plan_id === p.id)
           })),
           profile,
@@ -597,9 +618,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           isLoggedIn: true,
           profile: { ...prev.profile, email: session.user.email || '', name: session.user.user_metadata?.name || 'FinOS User' }
         }));
+        await loadAppData(false);
         const status = offlineSyncService.getStatus();
         if (!status.isInitialized && status.isOnline) offlineSyncService.bootstrap();
-      } else {
+      }
+      else {
         setState((prev: AppState) => ({ ...prev, isLoggedIn: false }));
       }
     });
@@ -608,6 +631,60 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       authListener.subscription.unsubscribe();
     };
   }, [loadAppData]);
+
+  // Sync geminiKeys and logo to localStorage whenever they change in state
+  useEffect(() => {
+    if (state.sync_status.isInitialized) {
+      if (state.settings.geminiKeys) {
+        localStorage.setItem('finos_gemini_keys', JSON.stringify(state.settings.geminiKeys));
+      }
+      if (state.settings.customLogoUrl) {
+        localStorage.setItem('finos_custom_logo_url', state.settings.customLogoUrl);
+      } else {
+        localStorage.removeItem('finos_custom_logo_url');
+      }
+
+      if (state.settings.preferredGeminiKeyID) {
+        localStorage.setItem('finos_preferred_key_id', state.settings.preferredGeminiKeyID);
+      }
+      if (state.settings.preferredGeminiModel) {
+        localStorage.setItem('finos_preferred_model', state.settings.preferredGeminiModel);
+      }
+    }
+  }, [state.settings.geminiKeys, state.settings.customLogoUrl, state.settings.preferredGeminiKeyID, state.settings.preferredGeminiModel, state.sync_status.isInitialized]);
+
+  // AUTO-MIGRATION: If we have keys in state (from localStorage) but DB might be empty
+  // we trigger a save to ensure DB is populated.
+  useEffect(() => {
+    if (state.isLoggedIn && state.settings.geminiKeys && state.settings.geminiKeys.length > 0) {
+      const checkAndMigrate = async () => {
+        const profiles = await databaseKernel.query('profiles');
+        if (profiles.length > 0) {
+          const p = profiles[0] as any;
+          if (!p.gemini_keys || JSON.parse(p.gemini_keys).length === 0) {
+            console.log("🚀 [FinanceContext] Auto-migrating Gemini Keys to Database...");
+            updateSettings({ geminiKeys: state.settings.geminiKeys });
+          }
+        }
+      };
+      checkAndMigrate();
+    }
+  }, [state.isLoggedIn, state.settings.geminiKeys?.length]);
+
+  // Listen for real-time Gemini key updates from service
+  useEffect(() => {
+    const handleGeminiSync = (e: any) => {
+      const { keys, activeKeyId } = e.detail;
+      console.log('🔄 [FinanceContext] Gemini Key Sync:', activeKeyId, keys.length);
+      setState(prev => ({
+        ...prev,
+        settings: { ...prev.settings, geminiKeys: keys },
+        activeGeminiKeyId: activeKeyId
+      }));
+    };
+    window.addEventListener('FINOS_GEMINI_SYNC', handleGeminiSync);
+    return () => window.removeEventListener('FINOS_GEMINI_SYNC', handleGeminiSync);
+  }, []);
 
   // Realtime nano-pulse updates from sync engine
   useEffect(() => {
@@ -663,6 +740,44 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               nextState.notifications = [mappedN, ...filtered];
             }
             break;
+          case 'profiles':
+            const p = item;
+            const syncedSettings = {
+              ...prev.settings,
+              currency: p.currency || prev.settings.currency,
+              theme: p.theme || prev.settings.theme,
+              aiEnabled: p.ai_enabled === 1,
+              biometricEnabled: p.biometric_enabled === 1,
+              accentColor: p.accent_color || prev.settings.accentColor,
+              language: p.language || prev.settings.language,
+              privacyMode: p.privacy_mode === 1,
+              glassIntensity: p.glass_intensity ?? prev.settings.glassIntensity,
+              budgetStartDay: p.budget_start_day ?? prev.settings.budgetStartDay,
+              hapticEnabled: p.haptic_enabled === 1,
+              animationSpeed: p.animation_speed || prev.settings.animationSpeed,
+              defaultWalletId: p.default_wallet_id || prev.settings.defaultWalletId,
+              autoSync: p.auto_sync === 1,
+              decimalPlaces: p.decimal_places ?? prev.settings.decimalPlaces,
+              showHealthScore: p.show_health_score === 1,
+              compactMode: p.compact_mode === 1,
+              lowBalanceThreshold: p.low_balance_threshold ?? prev.settings.lowBalanceThreshold,
+              fontFamily: p.font_family || prev.settings.fontFamily,
+              animationIntensity: p.animation_intensity || prev.settings.animationIntensity,
+              biometricLockTimeout: p.biometric_lock_timeout ?? prev.settings.biometricLockTimeout,
+              soundEffectsEnabled: p.sound_effects_enabled === 1,
+              isAdminEnabled: p.is_admin_enabled === 1,
+              customGeminiKey: p.custom_gemini_key || prev.settings.customGeminiKey,
+              customSupabaseUrl: p.custom_supabase_url || prev.settings.customSupabaseUrl,
+              isReadOnly: p.is_read_only === 1,
+              maintenanceMode: p.maintenance_mode === 1,
+              customAppName: p.custom_app_name || prev.settings.customAppName,
+              glassEffectsEnabled: p.glass_effects_enabled === 1,
+              customLogoUrl: p.custom_logo_url || prev.settings.customLogoUrl,
+              geminiKeys: p.gemini_keys ? JSON.parse(p.gemini_keys) : []
+            };
+            nextState.settings = syncedSettings;
+            nextState.profile = { ...prev.profile, id: p.id, email: p.email, name: p.name, version: p.version };
+            break;
           default: break;
         }
         return nextState;
@@ -710,10 +825,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     const id = await databaseKernel.generateId();
     const meta = getSyncMetadata();
-    const newTxn: Transaction = { ...t, id, ...meta };
+    // Auto-inject time if date is missing or matches today (AI default)
+    const now = new Date();
+    const todayISO = now.toISOString().split('T')[0];
+    const transactionDate = (!t.date || t.date === todayISO) ? now.toISOString() : t.date;
+    const newTxn: Transaction = { ...t, date: transactionDate, id, ...meta };
     setState((prev: AppState) => ({ ...prev, transactions: [newTxn, ...prev.transactions] }));
-    const dbData = { id, amount: t.amount, date: t.date, wallet_id: t.walletId, channel_type: t.channelType, category_id: t.categoryId, note: t.note, type: t.type, is_split: t.isSplit ? 1 : 0, to_wallet_id: t.toWalletId, to_channel_type: t.toChannelType, linked_transaction_id: t.linkedTransactionId, ...meta };
-    await databaseKernel.insert('transactions', dbData);
+    const dbData = {
+      id,
+      amount: t.amount,
+      date: transactionDate,
+      wallet_id: t.walletId,
+      channel_type: t.channelType,
+      category_id: t.categoryId,
+      note: t.note,
+      type: t.type,
+      is_split: t.isSplit ? 1 : 0,
+      to_wallet_id: t.toWalletId,
+      to_channel_type: t.toChannelType,
+      linked_transaction_id: t.linkedTransactionId,
+      ...meta
+    };
+    await databaseKernel.insert('transactions', dbData, true);
     await offlineSyncService.enqueue('transactions', id, 'INSERT', dbData);
 
     const wallet = state.wallets.find(w => w.id === t.walletId);
@@ -726,26 +859,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const refTxn: Transaction = { ...t, id: refId, walletId: parentWallet.id, channelType: parentChannel.type, note: `[Ref] ${t.note || 'Transaction'} (via ${wallet.name})`, linkedTransactionId: id, isSubLedgerSync: true, subLedgerId: wallet.id, subLedgerName: wallet.name, ...getSyncMetadata() };
           setState((prev: AppState) => ({ ...prev, transactions: [refTxn, ...prev.transactions] }));
           const refDbData = {
-            ...refTxn,
+            id: refId,
+            amount: t.amount,
+            date: transactionDate,
             wallet_id: parentWallet.id,
             channel_type: parentChannel.type,
             category_id: t.categoryId,
-            is_split: t.isSplit ? 1 : 0,
-            to_wallet_id: t.toWalletId,
-            to_channel_type: t.toChannelType,
+            note: refTxn.note,
+            type: t.type,
+            is_split: 0,
             linked_transaction_id: id,
             is_sub_ledger_sync: 1,
             sub_ledger_id: wallet.id,
-            sub_ledger_name: wallet.name
+            sub_ledger_name: wallet.name,
+            ...getSyncMetadata()
           };
-          delete (refDbData as any).walletId;
-          delete (refDbData as any).channelType;
-          delete (refDbData as any).isSplit;
-          delete (refDbData as any).toWalletId;
-          delete (refDbData as any).toChannelType;
-          delete (refDbData as any).isSubLedgerSync;
 
-          await databaseKernel.insert('transactions', refDbData);
+          await databaseKernel.insert('transactions', refDbData, true);
           await offlineSyncService.enqueue('transactions', refId, 'INSERT', refDbData);
         }
       }
@@ -916,7 +1046,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const meta = getSyncMetadata();
     const category: Category = { ...c, id, ...meta };
     setState((prev: AppState) => ({ ...prev, categories: [...prev.categories, category] }));
-    const dbData = { id, name: c.name, icon: c.icon, color: c.color, type: c.type, parent_id: c.parentId || null, "order": c.order, ...meta };
+    const dbData = {
+      id, name: c.name, icon: c.icon, color: c.color, type: c.type,
+      parent_id: c.parentId || null, "order": c.order,
+      embedding: c.embedding ? JSON.stringify(c.embedding) : null,
+      ...meta
+    };
     await databaseKernel.insert('categories_user', dbData);
     await offlineSyncService.enqueue('categories_user', id, 'INSERT', dbData);
   }, [getSyncMetadata]);
@@ -937,6 +1072,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (updates.parentId !== undefined) dbUpdates.parent_id = updates.parentId;
     if (updates.order !== undefined) dbUpdates["order"] = updates.order;
     if (updates.isDisabled !== undefined) dbUpdates.is_disabled = updates.isDisabled ? 1 : 0;
+    if (updates.embedding) dbUpdates.embedding = JSON.stringify(updates.embedding);
 
     await databaseKernel.update('categories_user', id, dbUpdates);
     await offlineSyncService.enqueue('categories_user', id, 'UPDATE', { id, ...dbUpdates });
@@ -1116,6 +1252,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateSettings = useCallback(async (settingsUpdates: Partial<AppSettings>) => {
     console.log('⚙️ updateSettings called with:', settingsUpdates);
 
+    // If updating geminiKeys, save to localStorage for AI service
+    if ('geminiKeys' in settingsUpdates) {
+      if (settingsUpdates.geminiKeys) {
+        localStorage.setItem('finos_gemini_keys', JSON.stringify(settingsUpdates.geminiKeys));
+        console.log('💾 Saved geminiKeys to localStorage');
+      }
+    }
+
     // If updating logo, save to localStorage immediately for persistence
     if ('customLogoUrl' in settingsUpdates) {
       if (settingsUpdates.customLogoUrl) {
@@ -1127,66 +1271,93 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
-    // Update state immediately and get the new merged settings
-    let mergedSettings: AppSettings | null = null;
-    setState((prev: AppState) => {
-      mergedSettings = { ...prev.settings, ...settingsUpdates };
-      console.log('📝 New settings state:', mergedSettings);
-      return { ...prev, settings: mergedSettings };
+    // Use functional state updates to avoid stale closures
+    let currentSettings: AppSettings;
+    let currentProfile: UserProfile;
+
+    setState(prev => {
+      const nextSettings = { ...prev.settings, ...settingsUpdates };
+      currentSettings = nextSettings;
+      currentProfile = prev.profile;
+      return { ...prev, settings: nextSettings };
     });
 
-    // Persist to database using the merged settings
+    // Persist to database using the fresh settings
     const { data: { user } } = await supabase.auth.getUser();
-    if (user && mergedSettings) {
-      const s = mergedSettings; // Use the merged settings, not stale state
-      const dbUpdates = {
-        id: user.id, email: user.email, name: state.profile.name,
-        currency: s.currency,
-        theme: s.theme,
-        ai_enabled: s.aiEnabled ? 1 : 0,
-        biometric_enabled: s.biometricEnabled ? 1 : 0,
-        accent_color: s.accentColor,
-        language: s.language,
-        privacy_mode: s.privacyMode ? 1 : 0,
-        glass_intensity: s.glassIntensity,
-        budget_start_day: s.budgetStartDay,
-        haptic_enabled: s.hapticEnabled ? 1 : 0,
-        animation_speed: s.animationSpeed,
-        default_wallet_id: s.defaultWalletId,
-        auto_sync: s.autoSync ? 1 : 0,
-        decimal_places: s.decimalPlaces,
-        show_health_score: s.showHealthScore ? 1 : 0,
-        compact_mode: s.compactMode ? 1 : 0,
-        low_balance_threshold: s.lowBalanceThreshold,
-        font_family: s.fontFamily,
-        animation_intensity: s.animationIntensity,
-        biometric_lock_timeout: s.biometricLockTimeout,
-        sound_effects_enabled: s.soundEffectsEnabled ? 1 : 0,
-        is_admin_enabled: s.isAdminEnabled ? 1 : 0,
-        custom_gemini_key: s.customGeminiKey,
-        custom_supabase_url: s.customSupabaseUrl,
-        is_read_only: s.isReadOnly ? 1 : 0,
-        maintenance_mode: s.maintenanceMode ? 1 : 0,
-        custom_app_name: s.customAppName,
-        glass_effects_enabled: s.glassEffectsEnabled ? 1 : 0,
-        custom_logo_url: s.customLogoUrl,
-        ...getSyncMetadata()
-      };
+    if (user) {
+      // Functional update pattern ensures we always have the latest profile version
+      setState(prev => {
+        const nextVer = (prev.profile.version || 1) + 1;
+        const s = { ...prev.settings, ...settingsUpdates }; // Final confirmation of settings
 
-      console.log('💾 Saving to database, custom_logo_url:', dbUpdates.custom_logo_url);
-      await databaseKernel.insert('profiles', dbUpdates, true);
-      await offlineSyncService.enqueue('profiles', user.id, 'UPDATE', dbUpdates);
-      console.log('✅ Settings saved to database successfully');
+        const dbUpdates: any = {
+          id: user.id, email: user.email, name: prev.profile.name,
+          currency: s.currency,
+          theme: s.theme,
+          ai_enabled: s.aiEnabled ? 1 : 0,
+          biometric_enabled: s.biometricEnabled ? 1 : 0,
+          accent_color: s.accentColor,
+          language: s.language,
+          privacy_mode: s.privacyMode ? 1 : 0,
+          glass_intensity: s.glassIntensity,
+          budget_start_day: s.budgetStartDay,
+          haptic_enabled: s.hapticEnabled ? 1 : 0,
+          animation_speed: s.animationSpeed,
+          default_wallet_id: s.defaultWalletId,
+          auto_sync: s.autoSync ? 1 : 0,
+          decimal_places: s.decimalPlaces,
+          show_health_score: s.showHealthScore ? 1 : 0,
+          compact_mode: s.compactMode ? 1 : 0,
+          low_balance_threshold: s.lowBalanceThreshold,
+          font_family: s.fontFamily,
+          animation_intensity: s.animationIntensity,
+          biometric_lock_timeout: s.biometricLockTimeout,
+          sound_effects_enabled: s.soundEffectsEnabled ? 1 : 0,
+          is_admin_enabled: s.isAdminEnabled ? 1 : 0,
+          custom_gemini_key: s.customGeminiKey,
+          gemini_keys: s.geminiKeys ? JSON.stringify(s.geminiKeys) : null,
+          custom_supabase_url: s.customSupabaseUrl,
+          is_read_only: s.isReadOnly ? 1 : 0,
+          maintenance_mode: s.maintenanceMode ? 1 : 0,
+          custom_app_name: s.customAppName,
+          glass_effects_enabled: s.glassEffectsEnabled ? 1 : 0,
+          custom_logo_url: s.customLogoUrl,
+          preferred_gemini_key_id: s.preferredGeminiKeyID,
+          preferred_gemini_model: s.preferredGeminiModel,
+          ...getSyncMetadata(),
+          user_id: user.id, // Explicitly set user_id for profiles table
+          version: nextVer
+        };
 
-      // Force re-render by updating state again
-      console.log('🔄 Forcing context re-render');
-      setState((prev: AppState) => ({
-        ...prev,
-        settings: { ...prev.settings, ...settingsUpdates }
-      }));
-      console.log('✅ Context updated');
+        // Perform side-effects outside of the return, or better, use a microtask
+        (async () => {
+          console.log('💾 Saving to database, keys count:', s.geminiKeys?.length);
+          await databaseKernel.insert('profiles', dbUpdates, true);
+          await offlineSyncService.enqueue('profiles', user.id, 'UPDATE', dbUpdates);
+        })();
+
+        return { ...prev, settings: s, profile: { ...prev.profile, version: nextVer } };
+      });
     }
-  }, [state.profile, getSyncMetadata]);
+  }, [getSyncMetadata]);
+
+  // Listen for Gemini Service updates (Cloud Sync Bridge)
+  // MOVED HERE to avoid ReferenceError (updateSettings was not defined yet)
+  useEffect(() => {
+    const handleSettingsUpdate = ((e: CustomEvent) => {
+      console.log('☁️ [FinanceContext] Syncing AI Preference to Cloud:', e.detail);
+      updateSettings(e.detail);
+    }) as EventListener;
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('FINOS_SETTINGS_UPDATE', handleSettingsUpdate);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('FINOS_SETTINGS_UPDATE', handleSettingsUpdate);
+      }
+    };
+  }, [updateSettings]);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -1200,7 +1371,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addPlan = async (p: Omit<FinancialPlan, keyof SyncBase | 'id' | 'components' | 'settlements'>) => {
     if (state.settings.isReadOnly && !state.settings.isAdminEnabled) {
       alert("🔒 Read-Only Mode: Planning blocked.");
-      return;
+      throw new Error("Read-Only Mode active");
     }
     const id = await databaseKernel.generateId();
     const meta = getSyncMetadata();
@@ -1393,21 +1564,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: state.settings.decimalPlaces, maximumFractionDigits: state.settings.decimalPlaces })}`;
   }, [state.settings.privacyMode, state.settings.decimalPlaces, getCurrencySymbol]);
 
+  const value: FinanceContextType = {
+    ...state,
+    unlockApp, logout, addTransaction, deleteTransaction, updateTransaction, addWallet, updateWallet, deleteWallet, setPrimaryWallet,
+    addBudget, updateBudget, deleteBudget,
+    addCategory, updateCategory, deleteCategory, toggleCategoryStatus, addCommitment, updateCommitment, deleteCommitment, addTransfer, updateProfile, updateSettings, clearAllData,
+    totalBalance, availableAfterCommitments: totalBalance - totalMonthlyCommitments, walletsWithBalances, projectedBalances, isCloudLoading: false, getCurrencySymbol,
+    financialPlans: state.financialPlans, addPlan, updatePlan, deletePlan, addComponent, updateComponent, deleteComponent,
+    addSettlement, deleteSettlement, finalizePlan, searchPlanSuggestions,
+    activeTab, setActiveTab, selectedWalletId, setSelectedWalletId, syncStatus, forceSyncNow: () => offlineSyncService.sync(),
+    notifications: state.notifications, markNotificationAsRead, deleteNotification, addNotification,
+    totalMonthlyCommitments, settleCommitment, extendCommitmentDate, postponeCommitment, suggestedObligationNames,
+    formatCurrency,
+    isBooting: loading,
+    state // Expose full state
+  };
+
   return (
-    <FinanceContext.Provider value={{
-      ...state,
-      unlockApp, logout, addTransaction, deleteTransaction, updateTransaction, addWallet, updateWallet, deleteWallet, setPrimaryWallet,
-      addBudget, updateBudget, deleteBudget,
-      addCategory, updateCategory, deleteCategory, toggleCategoryStatus, addCommitment, updateCommitment, deleteCommitment, addTransfer, updateProfile, updateSettings, clearAllData,
-      totalBalance, availableAfterCommitments: totalBalance - totalMonthlyCommitments, walletsWithBalances, projectedBalances, isCloudLoading: false, getCurrencySymbol,
-      financialPlans: state.financialPlans, addPlan, updatePlan, deletePlan, addComponent, updateComponent, deleteComponent,
-      addSettlement, deleteSettlement, finalizePlan, searchPlanSuggestions,
-      activeTab, setActiveTab, selectedWalletId, setSelectedWalletId, syncStatus, forceSyncNow: () => offlineSyncService.sync(),
-      notifications: state.notifications, markNotificationAsRead, deleteNotification, addNotification,
-      totalMonthlyCommitments, settleCommitment, extendCommitmentDate, postponeCommitment, suggestedObligationNames,
-      formatCurrency,
-      isBooting: loading
-    }}>
+    <FinanceContext.Provider value={value}>
       {children}
     </FinanceContext.Provider>
   );

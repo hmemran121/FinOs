@@ -13,6 +13,8 @@ import SyncLockScreen from './components/SyncLockScreen';
 import AppHub from './components/AppHub';
 import NotificationInbox from './components/NotificationInbox';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
+import FloatingAIButton from './components/FloatingAIButton';
+import AIAssistantModal from './components/AIAssistantModal';
 import {
   LayoutGrid,
   Wallet,
@@ -45,6 +47,7 @@ const MainApp: React.FC = () => {
   const { isLoggedIn, isLocked, syncStatus, isBooting, activeTab, setActiveTab, settings, notifications, profile } = useFinance();
   const [showAdd, setShowAdd] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
 
   const unreadCount = notifications ? notifications.filter(n => !n.isRead).length : 0;
 
@@ -188,6 +191,9 @@ const MainApp: React.FC = () => {
 
       {showAdd && <TransactionForm onClose={() => setShowAdd(false)} />}
       {showNotifications && <NotificationInbox onClose={() => setShowNotifications(false)} />}
+
+      <FloatingAIButton onClick={() => setShowAIAssistant(true)} />
+      {showAIAssistant && <AIAssistantModal onClose={() => setShowAIAssistant(false)} />}
     </div>
   );
 };

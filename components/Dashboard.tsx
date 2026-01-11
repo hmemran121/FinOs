@@ -44,6 +44,15 @@ const Dashboard: React.FC = () => {
     if (transactions.length > 0) {
       getFinancialInsights(transactions, walletsWithBalances).then(setInsights);
     }
+
+    // Listen for manual regeneration requests from Admin Panel
+    const handleManualRefresh = () => {
+      console.log("⚡ [Dashboard] Manual Insight Refresh Triggered");
+      getFinancialInsights(transactions, walletsWithBalances, true).then(setInsights);
+    };
+
+    window.addEventListener('FINOS_REFRESH_INSIGHTS', handleManualRefresh);
+    return () => window.removeEventListener('FINOS_REFRESH_INSIGHTS', handleManualRefresh);
   }, [transactions, walletsWithBalances]);
 
   const chartData = transactions.slice(0, 7).reverse().map((t, i) => ({

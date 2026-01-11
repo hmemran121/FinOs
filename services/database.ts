@@ -17,6 +17,7 @@ class DatabaseKernel {
     private deviceId: string = 'unknown';
     private initPromise: Promise<void> | null = null;
     private isReady: boolean = false;
+    private tableMetadata: Record<string, string[]> = {};
 
     public get ready(): boolean {
         return this.isReady;
@@ -129,7 +130,7 @@ class DatabaseKernel {
         return this.initPromise;
     }
 
-    private currentSchemaVersion: number = 23;
+    private currentSchemaVersion: number = 27;
 
     private async applySchema() {
         if (!this.db) throw new Error('DB handle lost during schema application');
@@ -185,22 +186,24 @@ class DatabaseKernel {
 
         // 2. Comprehensive Table Structure
         const tables = {
-            categories_global: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, color TEXT, type TEXT, parent_id TEXT, "order" INTEGER, ${syncFields}`,
-            categories_user: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, color TEXT, type TEXT, parent_id TEXT, "order" INTEGER, ${syncFields}`,
+            categories_global: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, color TEXT, type TEXT, parent_id TEXT, "order" INTEGER, embedding TEXT, ${syncFields}`,
+            categories_user: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, color TEXT, type TEXT, parent_id TEXT, "order" INTEGER, embedding TEXT, ${syncFields}`,
             wallets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, currency TEXT NOT NULL, initial_balance REAL, color TEXT, icon TEXT, is_visible INTEGER DEFAULT 1, is_primary INTEGER DEFAULT 0, uses_primary_income INTEGER DEFAULT 0, parent_wallet_id TEXT, ${syncFields}`,
             channels: `id TEXT PRIMARY KEY, wallet_id TEXT NOT NULL, type TEXT NOT NULL, balance REAL DEFAULT 0, ${syncFields}, FOREIGN KEY(wallet_id) REFERENCES wallets(id)`,
             transactions: `id TEXT PRIMARY KEY, amount REAL NOT NULL, date TEXT NOT NULL, wallet_id TEXT, channel_type TEXT, category_id TEXT, note TEXT, type TEXT, is_split INTEGER DEFAULT 0, to_wallet_id TEXT, to_channel_type TEXT, linked_transaction_id TEXT, is_sub_ledger_sync INTEGER DEFAULT 0, sub_ledger_id TEXT, sub_ledger_name TEXT, ${syncFields}`,
             transfers: `id TEXT PRIMARY KEY, from_wallet_id TEXT NOT NULL, to_wallet_id TEXT NOT NULL, from_channel TEXT NOT NULL, to_channel TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, note TEXT, ${syncFields}`,
             commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, next_date TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', history TEXT DEFAULT '[]', is_recurring INTEGER DEFAULT 0, ${syncFields}`,
             budgets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, category_id TEXT, period TEXT, ${syncFields}`,
-            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, ${syncFields}`,
+            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, gemini_keys TEXT, preferred_gemini_key_id TEXT, preferred_gemini_model TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, ${syncFields}`,
             currencies: `code TEXT PRIMARY KEY, name TEXT NOT NULL, symbol TEXT NOT NULL, ${syncFields}`,
             channel_types: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon_name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER DEFAULT 0, ${syncFields}`,
             financial_plans: `id TEXT PRIMARY KEY, wallet_id TEXT, plan_type TEXT, title TEXT, status TEXT, planned_date TEXT, finalized_at TEXT, total_amount REAL, note TEXT, ${syncFields}`,
             financial_plan_components: `id TEXT PRIMARY KEY, plan_id TEXT, name TEXT, component_type TEXT, quantity REAL, unit TEXT, expected_cost REAL, final_cost REAL, category_id TEXT, group_id TEXT, group_parent_id TEXT, ${syncFields}`,
             financial_plan_settlements: `id TEXT PRIMARY KEY, plan_id TEXT, channel_id TEXT, amount REAL, ${syncFields}`,
             plan_suggestions: `id TEXT PRIMARY KEY, name TEXT NOT NULL, usage_count INTEGER DEFAULT 0, ${syncFields}`,
-            notifications: `id TEXT PRIMARY KEY, type TEXT, priority TEXT, title TEXT, message TEXT, is_read INTEGER DEFAULT 0, action_url TEXT, data TEXT, created_at INTEGER, ${syncFields}`
+            notifications: `id TEXT PRIMARY KEY, type TEXT, priority TEXT, title TEXT, message TEXT, is_read INTEGER DEFAULT 0, action_url TEXT, data TEXT, created_at INTEGER, ${syncFields}`,
+            ai_memories: `id TEXT PRIMARY KEY, memory_key TEXT, memory_value TEXT, memory_type TEXT, confidence REAL, last_used_at INTEGER, created_at INTEGER, ${syncFields}`,
+            ai_usage_logs: `id TEXT PRIMARY KEY, key_id TEXT, activity_type TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0, timestamp INTEGER, status TEXT, error_msg TEXT, ${syncFields}`
         };
 
         for (const [name, schema] of Object.entries(tables)) {
@@ -312,6 +315,35 @@ class DatabaseKernel {
         if (oldVersion < 23) {
             console.log("🛠️ [Database] Migrating to v23 (Custom Logo Support)...");
             try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN custom_logo_url TEXT`); } catch (e) { }
+        }
+        if (oldVersion < 24) {
+            console.log("🛠️ [Database] Migrating to v24 (Multi-API Support)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN gemini_keys TEXT`); } catch (e) { }
+        }
+        if (oldVersion < 25) {
+            console.log("🛠️ [Database] Migrating to v25 (Vector Embeddings)...");
+            try { await this.db.execute(`ALTER TABLE categories_global ADD COLUMN embedding TEXT`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE categories_user ADD COLUMN embedding TEXT`); } catch (e) { }
+        }
+
+        if (oldVersion < 26) {
+            console.log("🛠️ [Database] Migrating to v26 (AI Deep Memory)...");
+            try { await this.db.execute(`ALTER TABLE ai_memories ADD COLUMN confidence REAL DEFAULT 0.0`); } catch (e) { }
+            // Note: The table creation loop above handles the main table creation.
+            // This block is for any specific alterations or data migrations if needed.
+            // Since it's a new table, the main loop covers it, but we log it here for clarity.
+            // (v26 handled in the tables map)
+        }
+
+        if (oldVersion < 27) {
+            console.log("🛠️ [Database] Migrating to v27 (AI Health Check Persistence)...");
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN preferred_gemini_key_id TEXT`); } catch (e) { }
+            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN preferred_gemini_model TEXT`); } catch (e) { }
+        }
+
+        if (oldVersion < 28) {
+            console.log("🛠️ [Database] Migrating to v28 (AI Analytics)...");
+            // ai_usage_logs created by generic loop
         }
 
         // Taxonomy Modernization (v14) - One-time hard reset for the new hierarchical system
@@ -438,12 +470,20 @@ class DatabaseKernel {
 
     async run(query: string, params: any[] = [], transaction: boolean = true) {
         const db = await this.getDb();
-        return db.run(query, params, transaction);
+        const res = await db.run(query, params, transaction);
+        if (Capacitor.getPlatform() === 'web') {
+            await this.sqlite.saveToStore('finos_db');
+        }
+        return res;
     }
 
     async execute(statements: string, transaction: boolean = true) {
         const db = await this.getDb();
-        return db.execute(statements, transaction);
+        const res = await db.execute(statements, transaction);
+        if (Capacitor.getPlatform() === 'web') {
+            await this.sqlite.saveToStore('finos_db');
+        }
+        return res;
     }
 
     private writeQueue: Promise<any> = Promise.resolve();
@@ -458,9 +498,49 @@ class DatabaseKernel {
         return this.writeQueue as any;
     }
 
+    private async getTableColumns(table: string): Promise<string[]> {
+        if (this.tableMetadata[table]) return this.tableMetadata[table];
+
+        try {
+            const db = await this.getDb();
+            const res = await db.query(`PRAGMA table_info(${table})`);
+            const columns = (res.values || []).map((v: any) => v.name);
+            if (columns.length > 0) {
+                this.tableMetadata[table] = columns;
+            }
+            return columns;
+        } catch (e) {
+            console.error(`⚠️ [Kernel] Failed to fetch metadata for ${table}:`, e);
+            return [];
+        }
+    }
+
+    private async filterToTableSchema(table: string, data: any): Promise<any> {
+        const columns = await this.getTableColumns(table);
+        if (columns.length === 0) return data; // Fallback if meta fails
+
+        const filtered: any = {};
+        const rejected: string[] = [];
+
+        Object.keys(data).forEach(key => {
+            if (columns.includes(key)) {
+                filtered[key] = data[key];
+            } else {
+                rejected.push(key);
+            }
+        });
+
+        if (rejected.length > 0) {
+            console.warn(`🛡️ [Kernel] Hardening Blocked invalid columns for ${table}:`, rejected);
+        }
+
+        return filtered;
+    }
+
     // High-level safe wrappers
-    async insert(table: string, data: any, overwrite: boolean = false) {
+    async insert(table: string, rawData: any, overwrite: boolean = false) {
         return this.enqueueWrite(async () => {
+            const data = await this.filterToTableSchema(table, rawData);
             const db = await this.getDb();
             const keys = Object.keys(data);
             const values = Object.values(data).map(v => v === undefined ? null : v);
@@ -473,8 +553,9 @@ class DatabaseKernel {
         });
     }
 
-    async update(table: string, id: string, data: any) {
+    async update(table: string, id: string, rawData: any) {
         return this.enqueueWrite(async () => {
+            const data = await this.filterToTableSchema(table, rawData);
             const db = await this.getDb();
             const keys = Object.keys(data);
             const values = Object.values(data).map(v => v === undefined ? null : v);

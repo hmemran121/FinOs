@@ -28,14 +28,14 @@ class TransactionQueue {
 const txQueue = new TransactionQueue();
 
 // Tiered table groups to ensure Foreign Key integrity during parallel sync
-const TIER_1_TABLES = ['profiles', 'currencies', 'categories_user', 'categories_global', 'channel_types', 'plan_suggestions', 'wallets'];
+const TIER_1_TABLES = ['profiles', 'currencies', 'categories_user', 'categories_global', 'channel_types', 'plan_suggestions', 'wallets', 'ai_memories', 'ai_usage_logs'];
 const TIER_2_TABLES = ['channels', 'transactions', 'commitments', 'transfers', 'budgets', 'financial_plans'];
 const TIER_3_TABLES = ['financial_plan_components', 'financial_plan_settlements'];
 
 const DYNAMIC_TABLES = [
     'profiles', 'categories_user', 'currencies', 'wallets', 'channels',
     'transactions', 'commitments', 'transfers', 'budgets',
-    'financial_plans', 'financial_plan_components', 'financial_plan_settlements'
+    'financial_plans', 'financial_plan_components', 'financial_plan_settlements', 'ai_memories', 'ai_usage_logs'
 ];
 const STATIC_TABLES = [
     'categories_global', 'channel_types', 'plan_suggestions'
@@ -552,9 +552,10 @@ class OfflineSyncService {
             const res = await db.query("SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50");
             if (!res.values || res.values.length === 0) break;
             for (const op of res.values as SyncQueueItem[]) {
+                let opPayload = null;
                 try {
+                    opPayload = JSON.parse(op.payload);
                     await db.run("UPDATE sync_queue SET status = 'syncing' WHERE id = ?", [op.id], false);
-                    const opPayload = JSON.parse(op.payload);
                     let remoteTable = op.entity.startsWith('categories_') ? 'categories' : op.entity;
 
                     // Authority Fetch: Standardize on full local record to avoid Postgres NOT NULL violations
@@ -587,12 +588,26 @@ class OfflineSyncService {
                         await db.run("UPDATE sync_queue SET status = 'failed' WHERE id = ?", [op.id], false);
                         continue;
                     }
-                    const { data: syncedData, error: syncErr } = await supabase.from(remoteTable).upsert([finalData]).select('server_updated_at, version').single();
-                    if (syncErr) throw syncErr;
+                    let { data: syncedData, error: syncErr } = await supabase.from(remoteTable).upsert([finalData], { onConflict: pkField }).select('server_updated_at, version').single();
+
+                    if (syncErr) {
+                        // Phase 6: Sync Hardening - Auto-Heal Foreign Key Violations (Category/Wallet)
+                        if (syncErr.code === '23503' && op.entity === 'transactions') {
+                            console.warn(`⚠️ [Sync] FK Violation detected for ${op.entity}:${op.entity_id}. Retrying without category_id...`);
+                            const healedData = { ...finalData, category_id: null };
+                            const retry = await supabase.from(remoteTable).upsert([healedData], { onConflict: pkField }).select('server_updated_at, version').single();
+                            syncedData = retry.data;
+                            syncErr = retry.error;
+                        }
+
+                        if (syncErr) throw syncErr;
+                    }
+
                     if (this.realtimeChannel) this.realtimeChannel.send({ type: 'broadcast', event: 'sync_pulse', payload: { entity: op.entity, deviceId: myDeviceId } });
                     if (syncedData) await db.run(`UPDATE ${op.entity} SET server_updated_at = ?, version = ? WHERE ${pkField} = ?`, [syncedData.server_updated_at, syncedData.version, op.entity_id], false);
                     await db.run("UPDATE sync_queue SET status = 'synced' WHERE id = ?", [op.id], false);
                 } catch (e: any) {
+                    console.error(`❌ [Sync] Failed to push ${op.entity}:${op.entity_id}. Status: ${e.status}, Msg: ${e.message}`, opPayload);
                     await db.run("UPDATE sync_queue SET status = 'failed', retry_count = retry_count + 1 WHERE id = ?", [op.id], false);
                     hasMore = false; break;
                 }

@@ -67,6 +67,7 @@ export interface Category extends SyncBase {
   parentId?: string;
   isDisabled: boolean;
   order: number;
+  embedding?: number[];
 }
 
 export interface TransactionSplit extends SyncBase {
@@ -152,6 +153,7 @@ export interface UserProfile {
   email?: string;
   phone?: string;
   avatar?: string;
+  version?: number;
 }
 
 export type PlanStatus = 'DRAFT' | 'FINALIZED' | 'CANCELLED';
@@ -193,6 +195,15 @@ export interface PlanSettlement extends SyncBase {
   amount: number;
 }
 
+export interface GeminiKeyConfig {
+  id: string;
+  key: string;
+  label: string;
+  status: 'ACTIVE' | 'LIMITED' | 'INVALID';
+  lastUsed?: number;
+  limitedAt?: number;
+}
+
 export interface AppSettings {
   currency: string;
   theme: 'DARK' | 'LIGHT' | 'AMOLED';
@@ -223,6 +234,9 @@ export interface AppSettings {
   customAppName?: string;
   glassEffectsEnabled?: boolean;
   customLogoUrl?: string;
+  geminiKeys?: GeminiKeyConfig[];
+  preferredGeminiKeyID?: string;
+  preferredGeminiModel?: string;
 }
 
 export interface CurrencyConfig extends SyncBase {
@@ -268,6 +282,7 @@ export interface AppState {
   settings: AppSettings;
   isLoggedIn: boolean;
   sync_status: SyncStatusUI;
+  activeGeminiKeyId?: string | null;
 }
 
 export interface SyncStatusUI {
