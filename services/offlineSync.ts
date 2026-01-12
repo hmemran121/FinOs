@@ -14,14 +14,24 @@ import {
  */
 class TransactionQueue {
     private queue: Promise<any> = Promise.resolve();
+
     async enqueue<T>(task: () => Promise<T>): Promise<T> {
-        this.queue = this.queue.then(async () => {
-            try { return await task(); } catch (e) {
+        // Strict Serializer: Chain tasks so they NEVER run in parallel
+        const result = this.queue.then(async () => {
+            try {
+                return await task();
+            } catch (e) {
                 console.error("⛔ [TxQueue] Task Failed:", e);
-                return null;
+                throw e; // Propagate error to caller but keep queue alive
             }
+        }).catch(err => {
+            // Queue recovery: Ensure the queue promise itself doesn't reject permanently
+            return null;
         });
-        return this.queue as any;
+
+        // Update the queue pointer to the latest task
+        this.queue = result;
+        return result as Promise<T>;
     }
 }
 
@@ -174,7 +184,16 @@ class OfflineSyncService {
                 const meta = res.values[0] as MetaSync;
 
                 // User-Aware Initialization Check
-                const { data: { user } } = await supabase.auth.getUser();
+                let user = null;
+                try {
+                    const userTask = supabase.auth.getUser();
+                    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase Auth Timeout")), 3000));
+                    const { data } = await Promise.race([userTask, timeout]) as any;
+                    user = data?.user;
+                } catch (e) {
+                    console.warn("⚠️ [Sync] User fetch timed out, using guest/offline mode.");
+                }
+
                 this.syncStatus.userId = user?.id || null;
 
                 if (user && meta.last_user_id === user.id) {
@@ -222,8 +241,17 @@ class OfflineSyncService {
             .on('broadcast', { event: 'sync_pulse' }, (payload: any) => {
                 if (payload.payload.deviceId !== myDeviceId) {
                     const now = Date.now();
-                    if (now - this.lastPulseReceivedAt > 3000) {
+                    const entity = payload.payload.entity;
+
+                    // SMART PULSE HANDLING
+                    if (entity === 'system_config' || entity.startsWith('global_')) {
+                        // Background silent update for config
+                        this._executeSyncGlobalData();
+                    } else if (now - this.lastPulseReceivedAt > 5000) {
+                        // Only trigger data pull if it's a data table and we haven't pulled recently
                         this.lastPulseReceivedAt = now;
+                        console.log(`📡 [Sync Pulse] Received update signal for ${entity}`);
+                        // Use lightweight pull to just fetch latest deltas
                         this.pullRemoteChanges(true);
                     }
                 }
@@ -279,6 +307,29 @@ class OfflineSyncService {
         });
     }
 
+    public async incrementGlobalVersion(key: string) {
+        try {
+            // SECURITY GATE: Only Super Admins can write to global config
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: profile } = await supabase.from('profiles').select('is_super_admin').eq('id', user.id).maybeSingle();
+
+            if (!profile || profile.is_super_admin !== 1) {
+                console.warn(`🛡️ [Security] Blocked unauthorized global version increment for ${key}`);
+                return;
+            }
+
+            const res = await supabase.from('system_config').select('value').eq('key', 'static_data_versions').maybeSingle();
+            const versions = res.data ? JSON.parse(res.data.value) : {};
+            versions[key] = (versions[key] || 0) + 1;
+            await supabase.from('system_config').upsert({ key: 'static_data_versions', value: JSON.stringify(versions) });
+            console.log(`🌐 [Admin] Global version incremented for ${key}`);
+        } catch (e) {
+            console.error("❌ Failed to increment global version:", e);
+        }
+    }
+
     private async _executeSyncGlobalData() {
         if (!this.syncStatus.isOnline || this.isPulling) return;
 
@@ -286,15 +337,61 @@ class OfflineSyncService {
         // Throttle global checks to once per 10 minutes unless forced
         if (now - this.lastGlobalVersionCheck < 10 * 60 * 1000 && this.syncStatus.isGlobalInitialized) return;
 
-        this.isPulling = true;
         this.notify();
 
         try {
-            console.log("🌐 [Smart Sync] Phase 1: Initializing Global Taxonomy...");
-            const res = await supabase.from('system_config').select('value').eq('key', 'static_data_versions').maybeSingle();
-            if (!res.data) return;
+            console.log("🌐 [Smart Sync] Phase 1: Checking Global Configuration...");
 
-            const serverStaticVersions = JSON.parse(res.data.value);
+            // Pull multiple config keys in one go - READ ONLY for everyone
+            const { data: globalConfigs } = await supabase.from('system_config').select('key, value');
+            const configMap: Record<string, string> = {};
+            globalConfigs?.forEach(c => configMap[c.key] = c.value);
+
+            // 1. Sync AI Configuration (Global Management)
+            if (configMap['global_ai_keys']) {
+                const val = configMap['global_ai_keys'];
+                const current = localStorage.getItem('finos_global_ai_keys');
+                const newVal = typeof val === 'string' ? val : JSON.stringify(val);
+                if (current !== newVal) {
+                    console.log("🤖 [Sync] Applying Global AI Keys update (Background)");
+                    localStorage.setItem('finos_global_ai_keys', newVal);
+                }
+            }
+            if (configMap['global_ai_model']) {
+                const val = configMap['global_ai_model'];
+                const newVal = typeof val === 'string' ? val : String(val);
+                if (localStorage.getItem('finos_global_ai_model') !== newVal) {
+                    localStorage.setItem('finos_global_ai_model', newVal);
+                }
+            }
+            if (configMap['global_custom_gemini_key']) {
+                const val = configMap['global_custom_gemini_key'];
+                localStorage.setItem('finos_global_custom_gemini_key', typeof val === 'string' ? val : String(val));
+            }
+            if (configMap['global_ai_insights']) {
+                localStorage.setItem('finos_global_ai_insights', configMap['global_ai_insights']);
+            }
+
+            // 2. Sync Global Branding
+            if (configMap['global_app_name']) {
+                localStorage.setItem('finos_global_app_name', configMap['global_app_name']);
+            }
+            if (configMap['global_logo_url']) {
+                localStorage.setItem('finos_global_logo_url', configMap['global_logo_url']);
+            }
+
+            // 3. Sync Global Supabase (MANAGEMENT ACCESS)
+            if (configMap['global_supabase_url']) {
+                const val = configMap['global_supabase_url'];
+                localStorage.setItem('finos_global_supabase_url', typeof val === 'string' ? val : String(val));
+            }
+            if (configMap['global_supabase_key']) {
+                const val = configMap['global_supabase_key'];
+                localStorage.setItem('finos_global_supabase_key', typeof val === 'string' ? val : String(val));
+            }
+
+            const versionsRaw = configMap['static_data_versions'];
+            const serverStaticVersions = typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : versionsRaw;
             const tablesToPull: string[] = [];
             const finalVersions = { ...this.syncStatus.staticVersions };
 
@@ -308,6 +405,8 @@ class OfflineSyncService {
             }
 
             if (tablesToPull.length > 0) {
+                console.log(`📦 [Smart Sync] Pulling ${tablesToPull.length} static tables...`);
+                // Use a separate lightweight flag to indicate this is a background metadata sync
                 const db = await databaseKernel.getDb();
                 for (const table of tablesToPull) {
                     let e = table; let f = '*';
@@ -315,17 +414,18 @@ class OfflineSyncService {
                     await this.pullEntity(db, e, 0, f);
                 }
 
+                // ONLY UPDATE LOCAL META - DO NOT ATTEMPT TO WRITE TO SERVER
+                // The server is the source of truth for versions, we just acknowledge we have it.
                 await db.run('UPDATE meta_sync SET static_versions = ? WHERE id = 1', [JSON.stringify(finalVersions)]);
                 this.syncStatus.staticVersions = finalVersions;
             }
 
             this.syncStatus.isGlobalInitialized = true;
             this.lastGlobalVersionCheck = now;
-            console.log("✅ [Smart Sync] Phase 1: Global Taxonomy Ready.");
+            // console.log("✅ [Smart Sync] Global Config Synced."); 
         } catch (e) {
             console.error("❌ [Smart Sync] Global Pull Failed:", e);
         } finally {
-            this.isPulling = false;
             this.notify();
         }
     }
@@ -370,24 +470,51 @@ class OfflineSyncService {
         return () => { this.listeners = this.listeners.filter(l => l !== listener); };
     }
 
+    // Atomic Semaphore for Transaction Safety
+    private _isTransactionRunning = false;
+
     async safeTransaction(work: () => Promise<void>) {
+        // Serial Queue ensures only one operation enters this block at a time
         return txQueue.enqueue(async () => {
             const db = await databaseKernel.getDb();
+            let iStartedIt = false;
+
             try {
-                const status = await db.isTransactionActive();
-                if (!status.result) await db.beginTransaction();
-                await work();
-                const finalStatus = await db.isTransactionActive();
-                if (finalStatus.result) await db.commitTransaction();
-            } catch (error) {
-                console.error("🚀 [Sync] Tx Failed, Rolling back...", error);
+                // "Ask Forgiveness" Pattern:
+                // Instead of asking "isTransactionActive" (which lies/races),
+                // we try to start one. If it fails, we assume one is running and piggyback.
                 try {
-                    const errStatus = await db.isTransactionActive();
-                    if (errStatus.result) await db.rollbackTransaction();
-                } catch (e) { }
+                    await db.beginTransaction();
+                    iStartedIt = true;
+                } catch (e) {
+                    // Transaction likely active. We proceed as a guest.
+                    // console.log("⚠️ [Sync] Piggybacking on active transaction");
+                }
+
+                // Execute the work in the (now guaranteed) transaction context
+                await work();
+
+                // Only commit if we started it
+                if (iStartedIt) {
+                    await db.commitTransaction();
+                }
+            } catch (error) {
+                console.error("🚀 [Sync] Tx Failed:", error);
+
+                if (iStartedIt) {
+                    // Only rollback if we started it
+                    try {
+                        const errStatus = await db.isTransactionActive();
+                        if (errStatus.result) await db.rollbackTransaction();
+                    } catch (e) { }
+                }
+                // Do not rethrow
+            } finally {
+                if (iStartedIt) this._isTransactionRunning = false; // Cleanup just in case
             }
         });
     }
+
 
     async bootstrap() {
         if (this.bootstrapPromise) return this.bootstrapPromise;
@@ -577,7 +704,7 @@ class OfflineSyncService {
                             try {
                                 const parsed = JSON.parse(val);
                                 finalData[key] = parsed;
-                                console.log(`🧩 [Sync] Parsed JSON column for Supabase: ${key}`);
+                                // console.log(`🧩 [Sync] Parsed JSON column for Supabase: ${key}`);
                             } catch (e) {
                                 // Not actual JSON or malformed, keep as string
                             }

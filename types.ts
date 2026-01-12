@@ -147,13 +147,23 @@ export interface HealthScore {
   commitmentCoverage: number;
 }
 
-export interface UserProfile {
+export enum UserRole {
+  SUPER_ADMIN = 'SUPER_ADMIN', // App Owner - Sees everything
+  ADMIN = 'ADMIN',             // Org Admin - Manages members
+  MEMBER = 'MEMBER'            // Regular User - Limited access
+}
+
+export interface UserProfile extends SyncBase {
   id?: string;
   name: string;
   email?: string;
   phone?: string;
   avatar?: string;
-  version?: number;
+  role: UserRole;
+  isSuperAdmin: boolean;
+  organizationId?: string;
+  permissions?: Record<string, boolean>;
+  version: number;
 }
 
 export type PlanStatus = 'DRAFT' | 'FINALIZED' | 'CANCELLED';
@@ -229,6 +239,7 @@ export interface AppSettings {
   isAdminEnabled: boolean;
   customGeminiKey?: string;
   customSupabaseUrl?: string;
+  customSupabaseKey?: string;
   isReadOnly?: boolean;
   maintenanceMode?: boolean;
   customAppName?: string;
@@ -237,6 +248,7 @@ export interface AppSettings {
   geminiKeys?: GeminiKeyConfig[];
   preferredGeminiKeyID?: string;
   preferredGeminiModel?: string;
+  globalAiInsights?: any[];
 }
 
 export interface CurrencyConfig extends SyncBase {

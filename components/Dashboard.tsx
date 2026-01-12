@@ -41,10 +41,19 @@ const Dashboard: React.FC = () => {
   }, [totalBalance]);
 
   useEffect(() => {
+    // Priority 1: Global Insights from Super Admin (via settings)
+    if (settings.globalAiInsights && settings.globalAiInsights.length > 0) {
+      setInsights(settings.globalAiInsights);
+      return;
+    }
+
+    // Priority 2: Local Generation
     if (transactions.length > 0) {
       getFinancialInsights(transactions, walletsWithBalances).then(setInsights);
     }
+  }, [transactions, walletsWithBalances, settings.globalAiInsights]);
 
+  useEffect(() => {
     // Listen for manual regeneration requests from Admin Panel
     const handleManualRefresh = () => {
       console.log("⚡ [Dashboard] Manual Insight Refresh Triggered");

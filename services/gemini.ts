@@ -99,48 +99,37 @@ const logTokenUsage = (activity: string, response: any, keyId: string = 'unknown
 
 export const getRecentLogs = () => [...recentLogs];
 
+const FOUNDATION_KEYS: GeminiKeyConfig[] = [
+  { "id": "f1", "key": "AIzaSyAeYHBfcmEW-OoT9AlWW13amlNruWUOsno", "label": "Global Tier-1", "status": "ACTIVE" },
+  { "id": "f2", "key": "AIzaSyDLI5GGizlL1BH6Yx9bBZgD46Z2aBxHIFc", "label": "Global Tier-2", "status": "ACTIVE" },
+  { "id": "f3", "key": "AIzaSyBV-Q1aZpGukZE_e5aJyrI_nkfDrpoBIgY", "label": "Global Tier-3", "status": "ACTIVE" },
+  { "id": "f4", "key": "AIzaSyDJSJZm2xu6DPkLseucwlMKBohYZYuNqu4", "label": "Global Tier-4", "status": "ACTIVE" },
+  { "id": "f5", "key": "AIzaSyBE4Z-IZEQVv8FSKgOjpisTPmddsb3079Y", "label": "Global Tier-5", "status": "ACTIVE" }
+];
+
 const getKeys = (): GeminiKeyConfig[] => {
-  const customKeysJSON = localStorage.getItem('finos_gemini_keys');
-  if (customKeysJSON) {
+  // 1. Priority: Global Admin Keys (Synced from Super Admin)
+  const globalKeysJSON = localStorage.getItem('finos_global_ai_keys');
+
+  // 2. Secondary: User's own keys (if allowed/present)
+  const userKeysJSON = localStorage.getItem('finos_gemini_keys');
+
+  let activeKeysJSON = (globalKeysJSON && globalKeysJSON !== '[object Object]') ? globalKeysJSON : userKeysJSON;
+
+  if (activeKeysJSON && activeKeysJSON !== '[object Object]') {
     try {
-      let keys: GeminiKeyConfig[] = JSON.parse(customKeysJSON);
-      let hasChanges = false;
-      const now = Date.now();
-
-      // Auto-heal stuck keys
-      keys = keys.map(k => {
-        if (k.status === 'LIMITED') {
-          // If no timestamp or older than 60s, reset to ACTIVE
-          if (!k.limitedAt || (now - k.limitedAt > 60000)) {
-            hasChanges = true;
-            return { ...k, status: 'ACTIVE' as const, limitedAt: undefined };
-          }
-        }
-        return k;
-      });
-
-      if (hasChanges) {
-        localStorage.setItem('finos_gemini_keys', JSON.stringify(keys));
-        // Sync these changes to UI immediately if needed, but getKeys is usually called during operations
+      let keys: GeminiKeyConfig[] = typeof activeKeysJSON === 'string' ? JSON.parse(activeKeysJSON) : activeKeysJSON;
+      if (Array.isArray(keys) && keys.length > 0) {
+        return keys;
       }
-      return keys;
     } catch (e) {
-      console.error("Failed to parse gemini keys", e);
+      console.warn("Failed to parse custom keys, falling back to Foundation.", e);
     }
   }
 
-  // Fallback to legacy single key if exists
-  const legacyKey = localStorage.getItem('finos_custom_gemini_key');
-  if (legacyKey) {
-    return [{ id: 'default', key: legacyKey, label: 'Default Key', status: 'ACTIVE' }];
-  }
-
-  // Fallback to Env key (only if NO custom keys exist at all)
-  if (API_KEY && API_KEY !== "dummy_key") {
-    return [{ id: 'env', key: API_KEY, label: 'System Key', status: 'ACTIVE' }];
-  }
-
-  return [];
+  // 3. Ultimate Fallback: Foundation Keys (International Failover Reservoir)
+  console.log("🛠️ [AI-Kernel] Utilizing International Foundation Reservoir.");
+  return FOUNDATION_KEYS;
 };
 
 
@@ -242,6 +231,20 @@ const markKeyLimited = (id: string) => {
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Safe extraction for @google/genai responses
+const extractText = (response: any): string => {
+  if (!response) return "";
+  // Handle nested response object (Common in some SDK versions)
+  if (response.response) {
+    return extractText(response.response);
+  }
+  if (typeof response.text === 'string') return response.text;
+  if (typeof response.text === 'function') {
+    try { return response.text(); } catch (e) { return ""; }
+  }
+  return response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+};
+
 // Models to try in order. 
 // Reordered: 2.0 Flash is stabilized and has higher initial quotas.
 export const FALLBACK_MODELS = [
@@ -255,8 +258,8 @@ export const FALLBACK_MODELS = [
   "gemini-1.0-pro"
 ];
 
-// Helper to get preferred model
-export const getPreferredModel = () => localStorage.getItem('finos_preferred_model');
+// Helper to get preferred model (Global priority)
+export const getPreferredModel = () => localStorage.getItem('finos_global_ai_model') || localStorage.getItem('finos_preferred_model');
 const setPreferredModel = (model: string) => {
   localStorage.setItem('finos_preferred_model', model);
   // Dispatch event for Cloud Sync
@@ -324,48 +327,54 @@ async function withModelFailover<T>(
 
 // Standard wrapper for AI calls with auto-failover (KEYS)
 async function withFailover<T>(operation: (ai: GoogleGenAI, keyId: string) => Promise<T>): Promise<T> {
-  const maxRetries = getKeys().length;
+  const keys = getKeys();
+  const maxRetries = keys.length;
   let lastError: any = null;
+
+  // Track tried keys in this session to avoid infinite loops
+  const triedKeys = new Set<string>();
 
   for (let i = 0; i < maxRetries; i++) {
     const context = getAiForNextKey();
-    if (!context) {
-      throw lastError || new Error("No active AI keys available.");
+    if (!context || triedKeys.has(context.id)) {
+      // If we ran out of keys or identified a loop, break and throw
+      break;
     }
+
+    triedKeys.add(context.id);
 
     try {
-      dispatchLog(`🔑 Accessing Gemini via Key: ${context.id}...`);
+      console.log(`🌐 [AI-Engine] Routing request through Node: ${context.id}`);
       const result = await operation(context.ai, context.id);
-      // SUCCESS HOOK: Key worked!
-      const preferredId = getPreferredKeyId();
-      if (context.id !== preferredId) {
-        console.log(`🎉 [AI] New Preferred Key Found: ${context.id}`);
-        dispatchLog(`🏆 New Champion Key: ${context.id}`);
-        setPreferredKeyId(context.id);
-      }
+
+      // Success: Optional - if this wasn't the preferred key, we could promote it
       return result;
     } catch (error: any) {
-      const errorMsg = error?.message || "";
-      if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('404')) {
-        console.warn(`⚠️ [AI] Key ${context.id} exhausted/invalid. Switching Key IMMEDIATELY...`);
-        dispatchLog(`⛔ Key ${context.id} DEAD (429/404). Switching...`);
+      lastError = error;
+      const errorMsg = (error?.message || "").toUpperCase();
+
+      // Check for Retryable failures (Cloud Quota, Network, Model Availability)
+      const isRetryable =
+        errorMsg.includes('429') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED') ||
+        errorMsg.includes('404') ||
+        errorMsg.includes('503') ||
+        errorMsg.includes('500') ||
+        errorMsg.includes('DEADLINE_EXCEEDED');
+
+      if (isRetryable) {
+        console.warn(`⚠️ [AI-Engine] Node ${context.id} degraded. Attempting automated failover...`);
+        dispatchLog(`🔄 Node ${context.id} Failover: ${errorMsg.substring(0, 30)}...`);
         markKeyLimited(context.id);
-
-        // If preferred key fails, clear preference
-        const preferredId = getPreferredKeyId();
-        if (context.id === preferredId) {
-          localStorage.removeItem('finos_preferred_key_id');
-        }
-
-        // No delay - fail fast to next key
-        // USER REQUIREMENT: Do not retry the same key. Move to next key immediately.
-        lastError = error;
         continue; // Try next key
       }
-      throw error; // Other errors shouldn't trigger failover
+
+      // Non-retryable errors (e.g. Safety Filters, Invalid Params) should be thrown immediately
+      throw error;
     }
   }
-  throw lastError;
+
+  throw lastError || new Error("Global Intelligence Mesh is currently offline.");
 }
 
 export interface FinancialInsight {
@@ -376,9 +385,25 @@ export interface FinancialInsight {
 const CACHE_KEY = 'finos_ai_insights_cache';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
+const GLOBAL_CACHE_KEY = 'finos_global_ai_insights';
+
 export const getFinancialInsights = async (transactions: Transaction[], wallets: Wallet[], forceRefresh: boolean = false): Promise<FinancialInsight[]> => {
   try {
-    // 1. Check Cache
+    // 1. Check Global Cache First (Synced from Super Admin)
+    const globalCached = localStorage.getItem(GLOBAL_CACHE_KEY);
+    if (globalCached && !forceRefresh) {
+      try {
+        const data = JSON.parse(globalCached);
+        if (Array.isArray(data) && data.length > 0) {
+          console.log("🤖 [AI] Using Global Insights (Synced).");
+          return data;
+        }
+      } catch (e) {
+        console.warn("Failed to parse global insights", e);
+      }
+    }
+
+    // 2. Check Local Cache
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached && !forceRefresh) {
       const { data, timestamp } = JSON.parse(cached);
@@ -415,7 +440,7 @@ export const getFinancialInsights = async (transactions: Transaction[], wallets:
             }
           }
         });
-        const text = response.text;
+        const text = extractText(response);
         logTokenUsage("Generate Insights", response, keyId, model);
         return text ? (JSON.parse(text) as FinancialInsight[]) : [];
       });
@@ -552,7 +577,7 @@ export const processAICommand = async (input: string, context: { wallets: Wallet
         T:${today}|W:${walletsPrompt}|M:${memoriesStr}|In:${input || 'None'}`;
 
         console.log("📡 [AI-PROCESS] Sending Multimodal Request to Gemini...");
-        const multimodalResult = await withModelFailover(ai, "IMAGE_PROCESS", async (model) => {
+        const multimodalResult = await withModelFailover(ai, keyId, async (model) => {
           const res = await (ai as any).models.generateContent({
             model: model,
             contents: [{
@@ -568,7 +593,7 @@ export const processAICommand = async (input: string, context: { wallets: Wallet
               ]
             }]
           });
-          const text = res.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          const text = extractText(res);
           logTokenUsage("Multimodal Transaction (Image)", res, keyId, model);
           console.log("📥 [AI-PROCESS] Raw AI Response:", text);
 
@@ -617,18 +642,18 @@ export const processAICommand = async (input: string, context: { wallets: Wallet
       T:${today}|W:${walletsPrompt}|M:${memoriesStr}|In:"${input}"`;
 
       console.log("📡 [AI-PROCESS] Sending Text Request to Gemini...");
-      const textResult = await withModelFailover(ai, "TEXT_PROCESS", async (model) => {
-        const response = await (ai as any).models.generateContent({
+      const textResult = await withModelFailover(ai, keyId, async (model) => {
+        const res = await (ai as any).models.generateContent({
           model: model,
           contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
           config: {
             responseMimeType: "application/json"
           }
         });
-        const text = response.text;
-        logTokenUsage("Text Transaction Command", response, keyId, model);
+        const text = extractText(res);
+        logTokenUsage("Text Transaction Command", res, keyId, model);
         console.log("📥 [AI-PROCESS] Raw AI Response:", text);
-        const parsed = text ? JSON.parse(text) : { type: 'UNCERTAIN', explanation: "I couldn't process that." };
+        const parsed = text ? JSON.parse(text.replace(/```json|```/g, "").trim()) : { type: 'UNCERTAIN', explanation: "I couldn't process that." };
         console.log("🧩 [AI-PROCESS] JSON Parsed successfully.", parsed);
 
         // Smart Injection: Map Explanation to Note + Append Time
@@ -670,7 +695,7 @@ export const suggestCategory = async (note: string, amount: number): Promise<Cat
   try {
     return await withFailover(async (ai, keyId) => {
       return await withModelFailover(ai, keyId, async (model) => {
-        const response = await (ai as any).models.generateContent({
+        const res = await (ai as any).models.generateContent({
           model: model,
           contents: [{ role: 'user', parts: [{ text: `Suggest a financial category for a transaction of ${amount} with note: "${note}"` }] }],
           config: {
@@ -685,9 +710,9 @@ export const suggestCategory = async (note: string, amount: number): Promise<Cat
             }
           }
         });
-        const text = response.text;
-        logTokenUsage("Suggest Category", response, keyId, model);
-        return text ? JSON.parse(text) : { categoryName: 'General', confidence: 0 };
+        const text = extractText(res);
+        logTokenUsage("Suggest Category", res, keyId, model);
+        return text ? JSON.parse(text.replace(/```json|```/g, "").trim()) : { categoryName: 'General', confidence: 0 };
       });
     });
   } catch (error) {

@@ -101,21 +101,30 @@ class DatabaseKernel {
                 // 6. Performance & Reliability PRAGMAs
                 report(85, 'Optimizing SQLite Performance...');
                 try {
-                    // Force commit any dangling implicit transactions before PRAGMA
-                    await this.db.execute('COMMIT;');
-                } catch (e) { }
-
-                try {
-                    await this.db.execute('PRAGMA journal_mode = WAL;');
-                    await this.db.execute('PRAGMA synchronous = NORMAL;');
-                    await this.db.execute('PRAGMA foreign_keys = ON;');
+                    const txState = await this.db.isTransactionActive();
+                    if (!txState.result) {
+                        try {
+                            await this.db.run('PRAGMA journal_mode = WAL;', [], false);
+                            await this.db.run('PRAGMA synchronous = NORMAL;', [], false);
+                            await this.db.run('PRAGMA foreign_keys = ON;', [], false);
+                        } catch (pragmaErr) {
+                            console.warn(' ⚠️ [Kernel] PRAGMA failed:', pragmaErr);
+                        }
+                    } else {
+                        console.warn(' ⚠️ [Kernel] Skipping PRAGMAs due to active transaction.');
+                    }
                 } catch (e) {
-                    console.warn(' ⚠️ [Kernel] Optional optimizations failed or not supported:', e);
+                    console.warn(' ⚠️ [Kernel] Optimization setup failed:', e);
                 }
 
                 // 7. Schema & Migrations
                 report(90, 'Running System Migrations...');
                 await this.applySchema();
+
+                // 8. Explicit Persistence (Web Only)
+                if (Capacitor.getPlatform() === 'web') {
+                    await this.sqlite.saveToStore('finos_db');
+                }
 
                 this.isReady = true;
                 report(100, 'Secure Kernel Verified.');
@@ -130,7 +139,7 @@ class DatabaseKernel {
         return this.initPromise;
     }
 
-    private currentSchemaVersion: number = 27;
+    private currentSchemaVersion: number = 28;
 
     private async applySchema() {
         if (!this.db) throw new Error('DB handle lost during schema application');
@@ -194,7 +203,7 @@ class DatabaseKernel {
             transfers: `id TEXT PRIMARY KEY, from_wallet_id TEXT NOT NULL, to_wallet_id TEXT NOT NULL, from_channel TEXT NOT NULL, to_channel TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, note TEXT, ${syncFields}`,
             commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, next_date TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', history TEXT DEFAULT '[]', is_recurring INTEGER DEFAULT 0, ${syncFields}`,
             budgets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, category_id TEXT, period TEXT, ${syncFields}`,
-            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, gemini_keys TEXT, preferred_gemini_key_id TEXT, preferred_gemini_model TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, ${syncFields}`,
+            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, gemini_keys TEXT, preferred_gemini_key_id TEXT, preferred_gemini_model TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, role TEXT DEFAULT 'MEMBER', organization_id TEXT, permissions TEXT DEFAULT '{}', is_super_admin INTEGER DEFAULT 0, ${syncFields}`,
             currencies: `code TEXT PRIMARY KEY, name TEXT NOT NULL, symbol TEXT NOT NULL, ${syncFields}`,
             channel_types: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon_name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER DEFAULT 0, ${syncFields}`,
             financial_plans: `id TEXT PRIMARY KEY, wallet_id TEXT, plan_type TEXT, title TEXT, status TEXT, planned_date TEXT, finalized_at TEXT, total_amount REAL, note TEXT, ${syncFields}`,
@@ -245,6 +254,17 @@ class DatabaseKernel {
         // Category Parent Migration (v11)
         try {
             await this.db.execute(`ALTER TABLE categories_global ADD COLUMN parent_id TEXT`);
+        } catch (e) { }
+
+        // RBAC Migration (v16) - Role & Permissions
+        try {
+            await this.db.execute(`ALTER TABLE profiles ADD COLUMN role TEXT DEFAULT 'MEMBER'`);
+            await this.db.execute(`ALTER TABLE profiles ADD COLUMN organization_id TEXT`);
+            await this.db.execute(`ALTER TABLE profiles ADD COLUMN permissions TEXT DEFAULT '{}'`);
+            await this.db.execute(`ALTER TABLE profiles ADD COLUMN is_super_admin INTEGER DEFAULT 0`);
+
+            // Auto-promote first/existing user to SUPER_ADMIN to ensure owner has access
+            await this.db.execute(`UPDATE profiles SET role = 'SUPER_ADMIN', is_super_admin = 1 WHERE is_super_admin = 0`);
         } catch (e) { }
 
         // v15: Group Pickup & Structural Hierarchy
@@ -442,7 +462,19 @@ class DatabaseKernel {
         `);
 
         // 4. Version Tracking
-        await this.db.execute(`INSERT OR REPLACE INTO meta_schema (version) VALUES (${this.currentSchemaVersion})`);
+        console.log(`📡 [Kernel] Saving Schema Version: ${this.currentSchemaVersion}`);
+        await this.db.run(`DELETE FROM meta_schema`, [], false);
+        await this.db.run(`INSERT INTO meta_schema (version) VALUES (?)`, [this.currentSchemaVersion], false);
+
+        if (Capacitor.getPlatform() === 'web') {
+            try {
+                await this.sqlite.saveToStore('finos_db');
+                const verifyRes = await this.db.query('SELECT version FROM meta_schema');
+                console.log(`📡 [Kernel] Persistence Verify: ${verifyRes.values?.[0]?.version}`);
+            } catch (saveErr) {
+                console.error("❌ [Kernel] SaveToStore Failed:", saveErr);
+            }
+        }
     }
 
     /**
@@ -524,7 +556,16 @@ class DatabaseKernel {
 
         Object.keys(data).forEach(key => {
             if (columns.includes(key)) {
-                filtered[key] = data[key];
+                let val = data[key];
+                // Serialization Hardening: Ensure objects/arrays are stringified for SQLite
+                if (val !== null && typeof val === 'object') {
+                    try {
+                        val = JSON.stringify(val);
+                    } catch (e) {
+                        console.warn(`🛡️ [Kernel] Failed to stringify field ${key} for ${table}`);
+                    }
+                }
+                filtered[key] = val;
             } else {
                 rejected.push(key);
             }
@@ -583,7 +624,9 @@ class DatabaseKernel {
         if (!filter) {
             filter = (table.startsWith('meta_')) ? '1=1' : 'is_deleted = 0';
         }
+        console.log(`📡 [Kernel] Beginning query for ${table}...`);
         const res = await db.query(`SELECT * FROM ${table} WHERE ${filter}`, params);
+        console.log(`📡 [Kernel] Query for ${table} returned ${res.values?.length || 0} rows.`);
         return res.values || [];
     }
 

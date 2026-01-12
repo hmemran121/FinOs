@@ -170,6 +170,16 @@ const Settings: React.FC = () => {
               <p className="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-widest mt-1 truncate transition-colors">
                 {profile.email || (isBN ? 'ক্লাউড লিঙ্কড আইডি' : 'Cloud Linked Identity')}
               </p>
+              <div className="flex gap-2 mt-2">
+                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${profile.isSuperAdmin ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' : 'bg-zinc-800 text-zinc-400'}`}>
+                  {profile.isSuperAdmin ? 'SUPER ADMIN' : profile.role}
+                </span>
+                {profile.organizationId && (
+                  <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[9px] font-black uppercase tracking-wider">
+                    ORG: {profile.organizationId.slice(0, 8)}...
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </GlassCard>
@@ -494,34 +504,38 @@ const Settings: React.FC = () => {
       <section>
         <SectionHeader icon={<Database size={16} />} title={isBN ? 'ডেটা ম্যানেজমেন্ট' : 'Data & Portability'} color="zinc" />
         <div className="space-y-3">
-          <button
-            onClick={() => {
-              console.log("🖱️ Opening PIN Modal...");
-              setShowAdminPinModal(true);
-            }}
-            className="w-full p-5 bg-rose-500/10 border border-rose-500/20 rounded-[28px] text-rose-500 group active:scale-95 transition-all text-left mb-3"
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-rose-500/20 rounded-xl">
-                <ShieldAlert size={20} />
+          {profile.isSuperAdmin && (
+            <button
+              onClick={() => {
+                console.log("🖱️ Opening PIN Modal...");
+                setShowAdminPinModal(true);
+              }}
+              className="w-full p-5 bg-rose-500/10 border border-rose-500/20 rounded-[28px] text-rose-500 group active:scale-95 transition-all text-left mb-3"
+            >
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-rose-500/20 rounded-xl">
+                  <ShieldAlert size={20} />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-black uppercase tracking-widest">{isBN ? 'অ্যাডমিন কনসোল' : 'Admin Console'}</p>
+                  <p className="text-[10px] font-bold opacity-60">{isBN ? 'সিস্টেম পিন দিয়ে রুট এক্সেস পান' : 'Elevate to Root Access with PIN'}</p>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="text-sm font-black uppercase tracking-widest">{isBN ? 'অ্যাডমিন কনসোল' : 'Admin Console'}</p>
-                <p className="text-[10px] font-bold opacity-60">{isBN ? 'সিস্টেম পিন দিয়ে রুট এক্সেস পান' : 'Elevate to Root Access with PIN'}</p>
-              </div>
-            </div>
-          </button>
+            </button>
+          )}
           <SettingsRow
             icon={<Download size={18} />}
             label={isBN ? 'ডেটা এক্সপোর্ট (CSV)' : 'Export Ledger (CSV)'}
             onClick={exportData}
           />
-          <SettingsRow
-            icon={<Trash2 size={18} />}
-            label={isBN ? 'ফ্যাক্টরি রিসেট' : 'Factory Reset'}
-            className="text-rose-500"
-            onClick={clearAllData}
-          />
+          {profile.isSuperAdmin && (
+            <SettingsRow
+              icon={<Trash2 size={18} />}
+              label={isBN ? 'ফ্যাক্টরি রিসেট' : 'Factory Reset'}
+              className="text-rose-500"
+              onClick={clearAllData}
+            />
+          )}
         </div>
       </section>
 

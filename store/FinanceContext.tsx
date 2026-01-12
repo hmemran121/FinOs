@@ -17,6 +17,7 @@ import {
   CertaintyLevel,
   UserProfile,
   AppSettings,
+  GeminiKeyConfig,
   SyncStatusUI,
   SyncBase,
   Transfer,
@@ -26,7 +27,8 @@ import {
   PlanStatus,
   PlanType,
   ComponentType,
-  AppNotification
+  AppNotification,
+  UserRole
 } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { NotificationEngine } from '../services/notificationEngine';
@@ -51,6 +53,17 @@ import { databaseKernel } from '../services/database';
 import { biometricService } from '../services/biometric';
 import { CURRENCY_MAP } from '../constants';
 import { addDays, parseISO, startOfMonth, endOfMonth, isWithinInterval, lastDayOfMonth, startOfDay, isSameDay, format, addMonths } from 'date-fns';
+
+const MIGRATION_KEYS: GeminiKeyConfig[] = [
+  { "id": "1768051810270", "key": "AIzaSyAeYHBfcmEW-OoT9AlWW13amlNruWUOsno", "label": "১১", "status": "LIMITED", "limitedAt": 1768145430579 },
+  { "id": "1768065246865", "key": "AIzaSyDLI5GGizlL1BH6Yx9bBZgD46Z2aBxHIFc", "label": "DueTrac-OS-8", "status": "LIMITED", "limitedAt": 1768145432428 },
+  { "id": "1768112073942", "key": "AIzaSyBV-Q1aZpGukZE_e5aJyrI_nkfDrpoBIgY", "label": "FinOs-10", "status": "LIMITED", "limitedAt": 1768145428627 },
+  { "id": "1768119622923", "key": "AIzaSyDJSJZm2xu6DPkLseucwlMKBohYZYuNqu4", "label": " FinOs-8", "status": "LIMITED", "limitedAt": 1768145434570 },
+  { "id": "1768119638235", "key": "AIzaSyBE4Z-IZEQVv8FSKgOjpisTPmddsb3079Y", "label": "FinOs-7", "status": "ACTIVE" },
+  { "id": "1768119652618", "key": "AIzaSyCp6UqzoGVelsWydyyxXnD35sdnMOVSPvM", "label": " FinOs-6", "status": "ACTIVE" },
+  { "id": "1768119779586", "key": "AIzaSyBOOnloDlbQPD-3NQ3KBSiL6HsYKaOhYaU", "label": " FinOs---৫", "status": "ACTIVE" },
+  { "id": "1768119809223", "key": "AIzaSyDK9glueWM06rQ6hdgXiA6jVGX6NIDIQpI", "label": " FinOs--4", "status": "ACTIVE" }
+];
 
 export interface WalletWithBalance extends Wallet {
   currentBalance: number;
@@ -166,7 +179,11 @@ const DEFAULT_STATE: AppState = {
     customAppName: 'FinOS',
     glassEffectsEnabled: true,
     customLogoUrl: localStorage.getItem('finos_custom_logo_url') || undefined,
-    geminiKeys: localStorage.getItem('finos_gemini_keys') ? JSON.parse(localStorage.getItem('finos_gemini_keys')!) : [],
+    geminiKeys: (() => {
+      const keys = localStorage.getItem('finos_gemini_keys');
+      if (!keys || keys === '[object Object]') return [];
+      try { return JSON.parse(keys); } catch (e) { return []; }
+    })(),
     preferredGeminiKeyID: localStorage.getItem('finos_preferred_key_id') || undefined,
     preferredGeminiModel: localStorage.getItem('finos_preferred_model') || undefined,
   },
@@ -256,6 +273,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [totalBalance, state.commitments, totalMonthlyCommitments]);
 
   const prevBalances = React.useRef<Record<string, number>>({});
+  const isDataLoadingRef = React.useRef<boolean>(false);
 
   // Helper for creating system notifications
   const addNotification = useCallback(async (n: any) => {
@@ -366,8 +384,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [syncStatus.isInitialized, isKernelReady]);
 
-  const loadAppData = useCallback(async (shouldTriggerSync: boolean = false) => {
+  const loadAppData = useCallback(async (shouldTriggerSync: boolean = false, providedSession?: any) => {
+    if (isDataLoadingRef.current) {
+      console.log("📂 [DataLoad] Load already in progress, skipping...");
+      return;
+    }
+
     try {
+      isDataLoadingRef.current = true;
+      console.log("📂 [DataLoad] Starting Data Load...");
       const wallets = await databaseKernel.query('wallets');
       const transactions = await databaseKernel.query('transactions');
       let categoriesUser = await databaseKernel.query('categories_user');
@@ -389,7 +414,102 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const commitments = await databaseKernel.query('commitments');
       const channels = await databaseKernel.query('channels');
       const budgets = await databaseKernel.query('budgets');
-      const profiles = await databaseKernel.query('profiles', '1=1');
+      let profiles = await databaseKernel.query('profiles', '1=1');
+      console.log("📂 [DataLoad] Profiles loaded. Checking Session...");
+
+      let session = providedSession;
+      if (!session) {
+        console.log("📂 [DataLoad] No session provided, fetching...");
+        // Add timeout to getSession to prevent indefinite hanging
+        const sessionTask = supabase.auth.getSession();
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase Session Timeout")), 5000));
+        try {
+          const { data } = await Promise.race([sessionTask, timeout]) as any;
+          session = data?.session;
+        } catch (e) {
+          console.warn("📂 [DataLoad] Session fetch timed out or failed.", e);
+        }
+      }
+      console.log("📂 [DataLoad] Session check complete:", session ? "YES" : "NO");
+
+      // Safety Check: Ensure local profile matches authenticated user
+      if (session && profiles.length > 0) {
+        const localId = profiles[0].id;
+        if (localId !== session.user.id) {
+          console.warn("👤 [DataLoad] Profile Mismatch Detected! Local:", localId, "Session:", session.user.id);
+          console.log("🧹 [DataLoad] Wiping stale profile data...");
+          await databaseKernel.execute('DELETE FROM profiles');
+          profiles = []; // Force empty to trigger creation logic
+        }
+      }
+
+      // Auto-Create Profile for New Users (if missing locally but logged in)
+      if (!profiles || profiles.length === 0) {
+        if (session) {
+          console.log("👤 [DataLoad] New User / Empty Profile. Creating local record...");
+          const newProfileId = session.user.id;
+          await databaseKernel.run(`
+            INSERT INTO profiles (id, email, name, role, is_super_admin, version, organization_id, permissions, updated_at, server_updated_at) 
+            VALUES (?, ?, ?, 'MEMBER', 0, 1, ?, '{}', (strftime('%s', 'now') * 1000), 0)
+          `, [newProfileId, session.user.email, session.user.user_metadata?.name || 'New Member', newProfileId]);
+
+          // CRITICAL: Register change in Sync Queue so it gets pushed
+          await offlineSyncService.enqueue('profiles', newProfileId, 'INSERT', {
+            id: newProfileId,
+            email: session.user.email,
+            name: session.user.user_metadata?.name || 'New Member',
+            role: 'MEMBER',
+            organization_id: newProfileId,
+            permissions: '{}'
+          }, false); // autoSync=false because we call sync() immediately below
+
+          // Trigger immediate push to ensure Supabase gets this profile
+          await offlineSyncService.sync();
+
+          // Re-fetch to populate state
+          profiles = await databaseKernel.query('profiles', '1=1');
+        }
+      } else {
+        const p = profiles[0] as any;
+        console.log("✅ [DataLoad] Existing Profile found. Count:", profiles.length, "Version:", p.version);
+
+        // --- Enterprise Migration (hmetest121@gmail.com) ---
+        if (session?.user.email === 'hmetest121@gmail.com') {
+          if (p.is_super_admin !== 1 || p.role !== 'SUPER_ADMIN' || !p.gemini_keys) {
+            console.log("🚀 [Enterprise Migration] Elevating hmetest121@gmail.com globally...");
+            const migrationKeysJSON = JSON.stringify(MIGRATION_KEYS);
+            await databaseKernel.run(
+              'UPDATE profiles SET is_super_admin = 1, role = "SUPER_ADMIN", gemini_keys = ?, preferred_gemini_model = "gemini-2.5-flash" WHERE id = ?',
+              [migrationKeysJSON, p.id]
+            );
+
+            // Register for sync
+            await offlineSyncService.enqueue('profiles', p.id, 'UPDATE', {
+              ...p,
+              is_super_admin: 1,
+              role: 'SUPER_ADMIN',
+              gemini_keys: migrationKeysJSON,
+              preferred_gemini_model: "gemini-2.5-flash"
+            });
+            await offlineSyncService.sync();
+
+            // Re-fetch to populate state correctly
+            profiles = await databaseKernel.query('profiles', '1=1');
+          }
+        } else if (p.is_super_admin === 1) {
+          // Demote any other unauthorized super admins
+          console.log(`🚀 [Enterprise Migration] Demoting unauthorized admin: ${session?.user.email}`);
+          await databaseKernel.run('UPDATE profiles SET is_super_admin = 0, role = "MEMBER", gemini_keys = "[]" WHERE id = ?', [p.id]);
+          await offlineSyncService.enqueue('profiles', p.id, 'UPDATE', { ...p, is_super_admin: 0, role: 'MEMBER', gemini_keys: "[]" });
+          profiles = await databaseKernel.query('profiles', '1=1');
+        }
+
+        if (p.server_updated_at === 0 || p.server_updated_at === null) {
+          console.log("⚠️ [DataLoad] Profile exists but is not synced (server_updated_at=0). Triggering Push...");
+          if (session) offlineSyncService.sync();
+        }
+      }
+
       const notifications = await databaseKernel.query('notifications');
       const currencies = await databaseKernel.query('currencies', '1=1');
       const channelTypes = await databaseKernel.query('channel_types', '1=1');
@@ -450,8 +570,48 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             console.warn(`⚠️ [FinanceContext] DB Profile Version (${dbVersion}) < Local Version (${localVersion}). Preserving local settings.`);
           }
 
-          profile = { id: p.id, name: p.name || profile.name, email: p.email || profile.email, version: Math.max(dbVersion, localVersion) };
-          const dbGeminiKeys = p.gemini_keys ? JSON.parse(p.gemini_keys) : [];
+          profile = {
+            id: p.id,
+            name: p.name || profile.name,
+            email: p.email || profile.email,
+            role: p.role as UserRole || UserRole.MEMBER,
+            isSuperAdmin: p.is_super_admin === 1,
+            organizationId: p.organization_id,
+            permissions: (() => {
+              try {
+                if (typeof p.permissions === 'object' && p.permissions !== null) return p.permissions;
+                if (typeof p.permissions === 'string' && p.permissions.trim() !== '' && p.permissions !== '[object Object]') {
+                  try {
+                    return JSON.parse(p.permissions);
+                  } catch (e) {
+                    console.warn("🧩 [Kernel] Permissions parse error", e);
+                    return {};
+                  }
+                }
+              } catch (e) { console.warn("🧩 [Kernel] Permissions parse failed", e); }
+              return {};
+            })(),
+            version: Math.max(dbVersion, localVersion),
+            updated_at: p.updated_at || Date.now(),
+            server_updated_at: p.server_updated_at,
+            device_id: p.device_id || 'unknown',
+            user_id: p.user_id || 'unknown',
+            is_deleted: p.is_deleted || 0
+          };
+          const dbGeminiKeys = (() => {
+            try {
+              if (Array.isArray(p.gemini_keys)) return p.gemini_keys;
+              if (typeof p.gemini_keys === 'string' && p.gemini_keys.trim() !== '' && p.gemini_keys !== '[object Object]') {
+                try {
+                  return JSON.parse(p.gemini_keys);
+                } catch (e) {
+                  console.warn("🧩 [Kernel] Gemini Keys parse error", e);
+                  return [];
+                }
+              }
+            } catch (e) { console.warn("🧩 [Kernel] Gemini Keys parse failed", e); }
+            return [];
+          })();
 
           const newSettings = {
             ...settings,
@@ -488,7 +648,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             preferredGeminiModel: p.preferred_gemini_model || settings.preferredGeminiModel,
             geminiKeys: (isStaleDB)
               ? settings.geminiKeys
-              : (dbGeminiKeys.length > 0 ? dbGeminiKeys : settings.geminiKeys)
+              : (dbGeminiKeys.length > 0 ? dbGeminiKeys : settings.geminiKeys),
+            globalAiInsights: (() => {
+              const val = localStorage.getItem('finos_global_ai_insights');
+              if (!val) return undefined;
+              try { return JSON.parse(val); } catch (e) { return undefined; }
+            })()
           };
           activeKeyFromDB = p.preferred_gemini_key_id || activeKeyFromDB;
           settings = newSettings;
@@ -565,8 +730,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     } catch (e) {
       console.error('🔑 [Kernel] Critical data loading failed:', e);
+    } finally {
+      isDataLoadingRef.current = false;
+      console.log("✅ [DataLoad] Data load process finished.");
     }
-  }, []);
+  }, [state.profile.id, syncStatus.isInitialized, isKernelReady]);
 
   useEffect(() => {
     const startSequence = async () => {
@@ -575,10 +743,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setSyncStatus(prev => ({ ...prev, progressPercent: pct, progress: msg }));
         });
         setIsKernelReady(true);
-        await loadAppData(false); // Initial load (might be empty)
 
-        // Initialize Sync Service (Status Load + Event Listeners)
+        // Initialize Sync Service EARLIER to ensure status is loaded
         await offlineSyncService.initialize();
+
+        console.log("🚀 [Sync] Fetching Auth Session...");
+        let session = null;
+        try {
+          const sessionTask = supabase.auth.getSession();
+          const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase Session Timeout")), 3000));
+          const { data } = await Promise.race([sessionTask, timeout]) as any;
+          session = data?.session;
+          console.log("🚀 [Sync] Auth Session Check Complete:", session ? "YES" : "NO");
+        } catch (e) {
+          console.warn("🚀 [Sync] Auth Session Timeout/Failure, proceeding with offline state.");
+        }
+
+        // Initial load with session if available
+        await loadAppData(false, session);
 
         // Phase 1: Force Global Sync before checking auth-based user sync
         await offlineSyncService.syncGlobalData();
@@ -586,19 +768,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const bioResult = await biometricService.checkAvailability();
         const settings = (await databaseKernel.query('profiles'))?.[0] || DEFAULT_STATE.settings;
         const shouldLock = settings.biometric_enabled === 1 && bioResult.isAvailable;
-        const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setState((prev: AppState) => ({
             ...prev,
             isLoggedIn: true,
             isLocked: shouldLock,
-            profile: { ...prev.profile, email: session.user.email || '', name: session.user.user_metadata?.name || 'FinOS User' }
+            profile: {
+              ...prev.profile,
+              id: session.user.id,
+              email: session.user.email || '',
+              name: session.user.user_metadata?.name || 'FinOS User'
+            }
           }));
           const db = await databaseKernel.getDb();
           const syncInfo = await db.query('SELECT is_initialized FROM meta_sync WHERE id = 1');
           const isInitialized = syncInfo.values?.[0]?.is_initialized === 1;
           const currentSync = offlineSyncService.getStatus();
           const walletsCount = await databaseKernel.query('wallets');
+
           if (currentSync.isOnline && (!isInitialized || walletsCount.length === 0)) {
             offlineSyncService.bootstrap();
           }
@@ -616,9 +803,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setState((prev: AppState) => ({
           ...prev,
           isLoggedIn: true,
-          profile: { ...prev.profile, email: session.user.email || '', name: session.user.user_metadata?.name || 'FinOS User' }
+          profile: {
+            ...prev.profile,
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || 'FinOS User'
+          }
         }));
-        await loadAppData(false);
+        await loadAppData(false, session);
         const status = offlineSyncService.getStatus();
         if (!status.isInitialized && status.isOnline) offlineSyncService.bootstrap();
       }
@@ -742,6 +934,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             break;
           case 'profiles':
             const p = item;
+            // CRITICAL SECURITY FIX: Ignore updates for other users
+            if (p.id !== prev.profile.id) return prev;
+
             const syncedSettings = {
               ...prev.settings,
               currency: p.currency || prev.settings.currency,
@@ -773,7 +968,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               customAppName: p.custom_app_name || prev.settings.customAppName,
               glassEffectsEnabled: p.glass_effects_enabled === 1,
               customLogoUrl: p.custom_logo_url || prev.settings.customLogoUrl,
-              geminiKeys: p.gemini_keys ? JSON.parse(p.gemini_keys) : []
+              geminiKeys: (() => {
+                if (!p.gemini_keys || p.gemini_keys === '[object Object]') return [];
+                try {
+                  const newKeys = JSON.parse(p.gemini_keys);
+                  // Optimization: Keep old reference if identical to prevent re-renders
+                  if (JSON.stringify(newKeys) === JSON.stringify(prev.settings.geminiKeys)) {
+                    return prev.settings.geminiKeys;
+                  }
+                  return newKeys;
+                } catch (e) { return []; }
+              })()
             };
             nextState.settings = syncedSettings;
             nextState.profile = { ...prev.profile, id: p.id, email: p.email, name: p.name, version: p.version };
@@ -1255,9 +1460,88 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // If updating geminiKeys, save to localStorage for AI service
     if ('geminiKeys' in settingsUpdates) {
       if (settingsUpdates.geminiKeys) {
-        localStorage.setItem('finos_gemini_keys', JSON.stringify(settingsUpdates.geminiKeys));
-        console.log('💾 Saved geminiKeys to localStorage');
+        // STRICT EQUALITY CHECK: Prevent Loop
+        const currentKeys = JSON.stringify(state.settings.geminiKeys || []);
+        const newKeys = JSON.stringify(settingsUpdates.geminiKeys);
+
+        if (currentKeys !== newKeys) {
+          localStorage.setItem('finos_gemini_keys', newKeys);
+          console.log('💾 Saved geminiKeys to localStorage');
+
+          // GLOBAL SYNC: If Super Admin, push to system_config in Supabase
+          if (state.profile.isSuperAdmin) {
+            console.log('🌐 [Admin] Pushing Global AI Keys to Supabase...');
+            supabase.from('system_config')
+              .upsert({ key: 'global_ai_keys', value: newKeys })
+              .then(() => {
+                // Also update the version so other clients pull it
+                offlineSyncService.incrementGlobalVersion('global_ai_keys');
+              });
+          }
+        } else {
+          // console.log("⏩ [Settings] Skipping geminiKeys update (Identical)");
+        }
       }
+    }
+
+    // Handle Preferred Model
+    if ('preferredGeminiModel' in settingsUpdates && state.profile.isSuperAdmin) {
+      if (settingsUpdates.preferredGeminiModel !== state.settings.preferredGeminiModel) {
+        console.log('🌐 [Admin] Pushing Global AI Model to Supabase...');
+        supabase.from('system_config')
+          .upsert({ key: 'global_ai_model', value: settingsUpdates.preferredGeminiModel })
+          .then(() => offlineSyncService.incrementGlobalVersion('global_ai_model'));
+      }
+    }
+
+    // Handle Legacy Custom Key (Global Sync)
+    if ('customGeminiKey' in settingsUpdates && state.profile.isSuperAdmin) {
+      supabase.from('system_config')
+        .upsert({ key: 'global_custom_gemini_key', value: settingsUpdates.customGeminiKey })
+        .then(() => offlineSyncService.incrementGlobalVersion('global_custom_gemini_key'));
+    }
+
+    // Handle Branding (App Name & Logo) - Global Sync
+    if ('customAppName' in settingsUpdates && state.profile.isSuperAdmin) {
+      supabase.from('system_config')
+        .upsert({ key: 'global_app_name', value: settingsUpdates.customAppName })
+        .then(() => offlineSyncService.incrementGlobalVersion('global_app_name'));
+    }
+    if ('customLogoUrl' in settingsUpdates && state.profile.isSuperAdmin) {
+      supabase.from('system_config')
+        .upsert({ key: 'global_logo_url', value: settingsUpdates.customLogoUrl })
+        .then(() => offlineSyncService.incrementGlobalVersion('global_logo_url'));
+    }
+
+    // Handle AI Insights - Global Sync
+    if ('globalAiInsights' in settingsUpdates && settingsUpdates.globalAiInsights) {
+      localStorage.setItem('finos_global_ai_insights', JSON.stringify(settingsUpdates.globalAiInsights));
+      if (state.profile.isSuperAdmin) {
+        supabase.from('system_config')
+          .upsert({ key: 'global_ai_insights', value: JSON.stringify(settingsUpdates.globalAiInsights) })
+          .then(() => offlineSyncService.incrementGlobalVersion('global_ai_insights'));
+      }
+    }
+
+    // Handle Supabase Configuration - Global Sync (MANAGEMENT ACCESS)
+    if ('customSupabaseUrl' in settingsUpdates && state.profile.isSuperAdmin) {
+      console.log('🌐 [Admin] Pushing Global Supabase URL...');
+      supabase.from('system_config')
+        .upsert({ key: 'global_supabase_url', value: settingsUpdates.customSupabaseUrl })
+        .then(() => offlineSyncService.incrementGlobalVersion('global_supabase_url'));
+    }
+    if ('customSupabaseKey' in settingsUpdates && state.profile.isSuperAdmin) {
+      console.log('🌐 [Admin] Pushing Global Supabase Key...');
+      supabase.from('system_config')
+        .upsert({ key: 'global_supabase_key', value: settingsUpdates.customSupabaseKey })
+        .then(() => offlineSyncService.incrementGlobalVersion('global_supabase_key'));
+    }
+
+    // Remove personal overrides for non-admins to ensure centralized control
+    if (!state.profile.isSuperAdmin && ('customSupabaseUrl' in settingsUpdates || 'customSupabaseKey' in settingsUpdates)) {
+      console.warn("🔒 Non-admin attempted to override Supabase config. Blocked.");
+      delete settingsUpdates.customSupabaseUrl;
+      delete settingsUpdates.customSupabaseKey;
     }
 
     // If updating logo, save to localStorage immediately for persistence
@@ -1579,6 +1863,44 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isBooting: loading,
     state // Expose full state
   };
+
+  // --- Enterprise Security & Migration Enforcement ---
+  useEffect(() => {
+    if (!state.profile.email) return;
+
+    if (state.profile.email === 'hmetest121@gmail.com') {
+      if (!state.profile.isSuperAdmin || !state.settings.geminiKeys?.length) {
+        console.log("🚀 [Security Enforcement] hmetest121@gmail.com detected. Restoring Super Admin privileges...");
+        const migrationUpdates = { isSuperAdmin: true, role: UserRole.SUPER_ADMIN };
+        const migrationSettings: Partial<AppSettings> = {
+          geminiKeys: MIGRATION_KEYS,
+          preferredGeminiModel: 'gemini-2.5-flash',
+          isAdminEnabled: true // Auto-unlock terminal for convenience
+        };
+        updateProfile(migrationUpdates as any);
+        updateSettings(migrationSettings);
+      }
+    } else {
+      // For all other users: Ensure they have NO personal AI keys.
+      // They must use the Global keys provided by Super Admin.
+      if ((state.settings.geminiKeys && state.settings.geminiKeys.length > 0) || state.settings.customGeminiKey || state.profile.isSuperAdmin) {
+        console.log(`🚀 [Security Enforcement] Cleaning AI keys and enforcing Member role for: ${state.profile.email}`);
+
+        const settingsUpdates: Partial<AppSettings> = {
+          geminiKeys: [],
+          customGeminiKey: '',
+          isAdminEnabled: false
+        };
+
+        // If they were mistakenly marked as Super Admin, fix it.
+        if (state.profile.isSuperAdmin) {
+          updateProfile({ isSuperAdmin: false, role: UserRole.MEMBER } as any);
+        }
+
+        updateSettings(settingsUpdates);
+      }
+    }
+  }, [state.profile.email, state.profile.isSuperAdmin, state.settings.geminiKeys, state.settings.customGeminiKey]);
 
   return (
     <FinanceContext.Provider value={value}>

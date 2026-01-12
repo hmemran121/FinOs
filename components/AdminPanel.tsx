@@ -96,6 +96,25 @@ const AdminPanel: React.FC = () => {
         }
     }, [state.sync_status.userId]);
 
+    // RBAC Protection: Super Admin Only
+    if (!state.profile?.isSuperAdmin) {
+        return (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6 bg-[var(--bg-color)]">
+                <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center mb-6 animate-pulse">
+                    <ShieldAlert size={40} className="text-rose-500" />
+                </div>
+                <h2 className="text-xl font-black text-[var(--text-main)] mb-2 uppercase tracking-titest">Access Denied</h2>
+                <p className="text-[var(--text-muted)] text-sm max-w-xs leading-relaxed mb-6 font-medium">
+                    This restricted terminal requires <span className="text-rose-500 font-bold">SUPER_ADMIN</span> clearance.
+                </p>
+                <div className="text-[10px] font-mono text-[var(--text-muted)] opacity-50">
+                    ID: {state.profile?.id || 'UNKNOWN'} <br />
+                    ROLE: {state.profile?.role || 'GUEST'}
+                </div>
+            </div>
+        );
+    }
+
     const handleDeleteMemory = async (id: string) => {
         if (!state.sync_status.userId) return;
         await memoryService.forget(id);
@@ -875,17 +894,53 @@ const AdminPanel: React.FC = () => {
                     <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)]">Cloud & Environment</h2>
                 </div>
 
-                <GlassCard className="p-4 space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-zinc-500/5 rounded-xl border border-white/5">
+                <GlassCard className="p-5 space-y-4 border-sky-500/20">
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2 block">Global Supabase URL</label>
+                            <input
+                                type="text"
+                                value={settings.customSupabaseUrl || ''}
+                                onChange={(e) => updateSettings({ customSupabaseUrl: e.target.value })}
+                                placeholder="https://xxx.supabase.co"
+                                className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-xl px-4 py-3 text-xs font-bold text-[var(--text-main)] focus:border-sky-500 outline-none transition-all"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2 block">Global Anon Key</label>
+                            <input
+                                type="password"
+                                value={settings.customSupabaseKey || ''}
+                                onChange={(e) => updateSettings({ customSupabaseKey: e.target.value })}
+                                placeholder="Supabase Anon Key..."
+                                className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-xl px-4 py-3 text-xs font-bold text-[var(--text-main)] focus:border-sky-500 outline-none transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="p-3 bg-emerald-500/5 rounded-xl border border-emerald-500/10 flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <Globe size={18} className="text-sky-500" />
+                            <Globe size={18} className="text-emerald-500" />
                             <div>
-                                <p className="text-xs font-bold text-[var(--text-main)]">Production Supabase</p>
-                                <p className="text-[9px] text-[var(--text-muted)] font-mono">https://liwnjbvintygnvhgbguw.supabase.co</p>
+                                <p className="text-[10px] font-bold text-[var(--text-main)]">Current Connection</p>
+                                <p className="text-[8px] text-[var(--text-muted)] font-mono truncate max-w-[150px]">
+                                    {settings.customSupabaseUrl || 'System Default (ENV)'}
+                                </p>
                             </div>
                         </div>
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     </div>
+
+                    <button
+                        onClick={() => {
+                            if (confirm("Reset connection to system defaults?")) {
+                                updateSettings({ customSupabaseUrl: undefined, customSupabaseKey: undefined });
+                            }
+                        }}
+                        className="w-full py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 hover:text-rose-500 transition-colors"
+                    >
+                        Reset to Environment Defaults
+                    </button>
 
                     <button
                         onClick={() => updateSettings({ isAdminEnabled: false })}
@@ -910,7 +965,9 @@ const AdminPanel: React.FC = () => {
                                 getFinancialInsights(transactions, walletsWithBalances, true)
                                     .then(newInsights => {
                                         console.log("✅ [AdminPanel] Insights Refreshed:", newInsights.length);
-                                        alert(`Insights regenerated! (${newInsights.length} suggestions)`);
+                                        // GLOBAL SYNC: Push to all users
+                                        updateSettings({ globalAiInsights: newInsights });
+                                        alert(`Insights regenerated! (${newInsights.length} suggestions) pushed to all users.`);
                                     })
                                     .catch(err => {
                                         console.error("❌ [AdminPanel] Refresh Failed:", err);
