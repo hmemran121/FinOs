@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { GlassCard } from './ui/GlassCard';
 import { supabase } from '../services/supabase';
 import { useFinance } from '../store/FinanceContext';
+import { useFeedback } from '../store/FeedbackContext';
 import { Mail, Lock, Fingerprint, ArrowRight, Smartphone, ShieldCheck, KeyRound, User, ChevronLeft, AlertCircle } from 'lucide-react';
 
 type AuthMode = 'LOGIN' | 'SIGNUP' | 'FORGOT' | 'PHONE_REQUEST' | 'PHONE_VERIFY';
 
 const AuthScreen: React.FC = () => {
   const { settings } = useFinance();
+  const { showFeedback } = useFeedback();
   const [mode, setMode] = useState<AuthMode>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,11 +46,11 @@ const AuthScreen: React.FC = () => {
           await supabase.from('profiles').insert([{ id: data.user.id, name }]);
         }
 
-        alert('Verification email sent! Please check your inbox.');
+        showFeedback('Verification email sent! Please check your inbox.', 'success');
       } else if (mode === 'FORGOT') {
         const { error } = await supabase.auth.resetPasswordForEmail(email);
         if (error) throw error;
-        alert('Password recovery link sent to your email.');
+        showFeedback('Password recovery link sent to your email.', 'success');
       } else if (mode === 'PHONE_REQUEST') {
         const { error } = await supabase.auth.signInWithOtp({ phone });
         if (error) throw error;
@@ -60,6 +62,7 @@ const AuthScreen: React.FC = () => {
       }
     } catch (err: any) {
       setError(err.message || 'Authentication Protocol Failed');
+      showFeedback(err.message || 'Authentication Protocol Failed', 'error');
     } finally {
       setLoading(false);
     }

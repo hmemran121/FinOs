@@ -15,6 +15,9 @@ import NotificationInbox from './components/NotificationInbox';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 import FloatingAIButton from './components/FloatingAIButton';
 import AIAssistantModal from './components/AIAssistantModal';
+import { ProfileDropdown } from './components/ProfileDropdown';
+import { UndoOverlay } from './components/ui/UndoOverlay';
+
 import {
   LayoutGrid,
   Wallet,
@@ -44,7 +47,7 @@ const LoadingFallback = () => (
 );
 
 const MainApp: React.FC = () => {
-  const { isLoggedIn, isLocked, syncStatus, isBooting, activeTab, setActiveTab, settings, notifications, profile } = useFinance();
+  const { isLoggedIn, isLocked, syncStatus, isBooting, activeTab, setActiveTab, settings, notifications, profile, isSuperAdmin, undoStack, undoDeletion, deleteProgress, setState } = useFinance();
   const [showAdd, setShowAdd] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
@@ -94,14 +97,37 @@ const MainApp: React.FC = () => {
     if (!settings.glassEffectsEnabled) document.body.classList.add('no-glass');
   }, [settings.theme, settings.accentColor, settings.glassIntensity, settings.animationSpeed, settings.glassEffectsEnabled]);
 
+  // Protection: Redirect Non-Admins away from Admin Tab
+  useEffect(() => {
+    if (activeTab === 'admin' && !isSuperAdmin) {
+      console.warn("🔐 [Security] Unauthorized access to Admin Tab. Redirecting...");
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isSuperAdmin, setActiveTab]);
+
+  // TEMP: Migration Trigger
+  useEffect(() => {
+    // Check if migration ran
+    const hasRan = localStorage.getItem('MIGRATION_001_DONE');
+    if (!hasRan) {
+      import('./services/migration_001').then(m => {
+        m.runShadowMigration().then(() => {
+          localStorage.setItem('MIGRATION_001_DONE', 'true');
+        });
+      });
+    }
+  }, []);
+
+
   if (isBooting) return <SyncLockScreen />;
   if (!isLoggedIn) return <AuthScreen />;
+
   if (isLocked) return <BiometricLockScreen />;
   if (!syncStatus.isGlobalInitialized || !syncStatus.isInitialized || (profile && syncStatus.userId !== profile.id)) {
     return <SyncLockScreen />;
   }
 
-  if (settings.maintenanceMode && !settings.isAdminEnabled) {
+  if (settings.maintenanceMode && !isSuperAdmin) {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-center p-12 text-center flex-col justify-center items-center gap-6">
         <div className="w-24 h-24 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center animate-pulse">
@@ -116,7 +142,7 @@ const MainApp: React.FC = () => {
 
   return (
     <div className={`min-h-screen pb-24 max-w-lg mx-auto bg-[var(--bg-color)] relative transition-colors duration-300 ${settings.isReadOnly ? 'border-t-2 border-rose-500/30' : ''}`}>
-      <header className="px-6 py-8 flex justify-between items-center sticky top-0 bg-[var(--nav-bg)] backdrop-blur-xl z-30 transition-colors duration-300">
+      <header className="px-6 py-5 flex justify-between items-center sticky top-0 bg-[var(--nav-bg)] backdrop-blur-xl z-50 transition-colors duration-300">
         <div>
           <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-0.5">{settings.customAppName || 'FinOS 3.0'}</h2>
           <p className="text-lg font-extrabold tracking-tight text-[var(--text-main)] transition-colors">
@@ -127,7 +153,7 @@ const MainApp: React.FC = () => {
           <SyncStatusIndicator />
           <button
             onClick={() => setShowNotifications(true)}
-            className="p-3 rounded-2xl border bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-muted)] relative"
+            className="p-3 rounded-2xl border bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-muted)] relative hover:border-blue-500/30 transition-all"
           >
             <Bell size={20} />
             {unreadCount > 0 && (
@@ -136,7 +162,10 @@ const MainApp: React.FC = () => {
               </span>
             )}
           </button>
-          {settings.isAdminEnabled && (
+
+          <ProfileDropdown />
+
+          {isSuperAdmin && (
             <button
               onClick={() => setActiveTab('admin')}
               className={`p-3 rounded-2xl border transition-all ${activeTab === 'admin' ? 'bg-rose-600 border-rose-500 text-white' : 'bg-[var(--input-bg)] border-[var(--border-glass)] text-rose-500'}`}
@@ -144,6 +173,7 @@ const MainApp: React.FC = () => {
               <ShieldAlert size={20} />
             </button>
           )}
+
         </div>
       </header>
 
@@ -194,6 +224,15 @@ const MainApp: React.FC = () => {
 
       <FloatingAIButton onClick={() => setShowAIAssistant(true)} />
       {showAIAssistant && <AIAssistantModal onClose={() => setShowAIAssistant(false)} />}
+
+      {/* Premium Undo Component - Only shows AFTER deletion is fully complete */}
+      {undoStack.length > 0 && !deleteProgress.isDeleting && (
+        <UndoOverlay
+          itemName={undoStack[undoStack.length - 1].data.name || 'Record'}
+          onUndo={undoDeletion}
+          onClose={() => setState(prev => ({ ...prev, undoStack: [] }))}
+        />
+      )}
     </div>
   );
 };
@@ -209,11 +248,15 @@ const NavButton: React.FC<{ active: boolean, onClick: () => void, icon: React.Re
   </button>
 );
 
+import { FeedbackProvider } from './store/FeedbackContext';
+
 const App: React.FC = () => (
   <ErrorBoundary>
-    <FinanceProvider>
-      <MainApp />
-    </FinanceProvider>
+    <FeedbackProvider>
+      <FinanceProvider>
+        <MainApp />
+      </FinanceProvider>
+    </FeedbackProvider>
   </ErrorBoundary>
 );
 

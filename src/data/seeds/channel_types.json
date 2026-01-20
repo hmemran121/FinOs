@@ -1,0 +1,54 @@
+[
+  {
+    "id": "BANK",
+    "name": "BANK",
+    "icon_name": "Landmark",
+    "color": "#10B981",
+    "is_default": true,
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "id": "CARD",
+    "name": "CARD",
+    "icon_name": "CreditCard",
+    "color": "#F59E0B",
+    "is_default": true,
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "id": "MOBILE",
+    "name": "MOBILE",
+    "icon_name": "Smartphone",
+    "color": "#A855F7",
+    "is_default": true,
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "id": "CASH",
+    "name": "CASH",
+    "icon_name": "Coins",
+    "color": "#3B82F6",
+    "is_default": true,
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  }
+]

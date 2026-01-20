@@ -27,6 +27,7 @@ class MemoryService {
         if (!userId || !key) return;
 
         try {
+            await databaseKernel.initialize();
             const db = await databaseKernel.getDb();
             const now = Date.now();
 
@@ -77,6 +78,7 @@ class MemoryService {
     async recall(userId: string): Promise<AIMemory[]> {
         if (!userId) return [];
         try {
+            await databaseKernel.initialize();
             const db = await databaseKernel.getDb();
             const res = await db.query('SELECT * FROM ai_memories WHERE user_id = ? AND is_deleted = 0 ORDER BY confidence DESC', [userId]);
             return (res.values as AIMemory[]) || [];
@@ -92,6 +94,7 @@ class MemoryService {
     async forget(id: string) {
         if (!id) return;
         try {
+            await databaseKernel.initialize();
             await databaseKernel.delete('ai_memories', id);
             await offlineSyncService.enqueue('ai_memories', id, 'DELETE', { id });
             console.log(`🧠 [Memory] Forgotten: ${id}`);

@@ -1,0 +1,20 @@
+            </div>
+        </div>
+    </GlassCard>
+
+    {/* Confirmation Modal for Global Data Repair */}
+    <ConfirmModal
+        isOpen={showRepairConfirm}
+        title="Global Data Repair"
+        message="This will pull all records from the cloud including all tenants. This operation may take a few moments."
+        confirmText="Proceed"
+        cancelText="Cancel"
+        onConfirm={handleGlobalRepair}
+        onCancel={() => setShowRepairConfirm(false)}
+        variant="warning"
+    />
+</div>
+    );
+};
+
+export default AdminPanel;

@@ -76,8 +76,6 @@ async function migrate() {
         // 5. Add Columns (Idempotent) - Original profiles table alterations
         const sql = `
             ALTER TABLE profiles 
-            ADD COLUMN IF NOT EXISTS gemini_keys JSONB;
-            ALTER TABLE profiles 
             ADD COLUMN IF NOT EXISTS custom_logo_url TEXT;
             ALTER TABLE profiles 
             ADD COLUMN IF NOT EXISTS custom_app_name TEXT;
@@ -103,10 +101,7 @@ async function migrate() {
         const cols = res.rows.map(r => `${r.column_name} (${r.data_type})`);
         console.log("📜 Current Columns:", cols);
 
-        const hasGemini = cols.some(c => c.includes('gemini_keys'));
-        const hasLogo = cols.some(c => c.includes('custom_logo_url'));
-
-        if (hasGemini && hasLogo) {
+        if (hasLogo) {
             console.log("✅ SUCCESS: Required columns exist.");
         } else {
             console.error("❌ FAILURE: Columns still missing!");

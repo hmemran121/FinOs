@@ -4,6 +4,7 @@ import { speechService } from '../services/speech';
 import { Camera as CapacitorCamera, CameraResultType } from '@capacitor/camera';
 import { useFinance } from '../store/FinanceContext';
 import { processAICommand, AIProcessedAction, learnFromCorrection } from '../services/gemini';
+import { useFeedback } from '../store/FeedbackContext';
 import { MasterCategoryType } from '../types';
 
 interface AIAssistantModalProps {
@@ -12,6 +13,7 @@ interface AIAssistantModalProps {
 
 const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
     const { wallets, categories, addTransaction, addPlan, syncStatus } = useFinance();
+    const { showFeedback } = useFeedback();
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const isProcessingRef = useRef(false); // Synchronous track to prevent floods
@@ -42,7 +44,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
 
     const startListening = () => {
         if (!speechService.isSupported()) {
-            alert("Voice recognition is not supported in this browser.");
+            showFeedback("Voice recognition is not supported in this browser.", 'error');
             return;
         }
 
@@ -183,13 +185,15 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
 
             if (suggestion.type === 'ADD_TRANSACTION' || suggestion.type === 'REQUEST_INFO') {
                 if ((!finalPayload.amount && finalPayload.amount !== 0) || !finalPayload.walletId || !finalPayload.channelType || !finalPayload.categoryId) {
-                    alert("Please complete all fields (Amount, Wallet, Channel, and Category).");
+                    showFeedback("Please complete all fields (Amount, Wallet, Channel, and Category).", 'error');
                     setExecuting(false);
                     return;
                 }
                 await addTransaction(finalPayload);
+                showFeedback('AI transaction executed successfully.', 'success');
             } else if (suggestion.type === 'ADD_PLAN') {
                 await addPlan(finalPayload);
+                showFeedback('Financial plan created from AI suggestion.', 'success');
             }
 
             // Learning Loop: Non-blocking
@@ -200,6 +204,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
             onClose();
         } catch (error) {
             console.error("Execution Error:", error);
+            showFeedback('Failed to execute AI command.', 'error');
         } finally {
             setExecuting(false);
         }

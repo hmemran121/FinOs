@@ -8,15 +8,23 @@ import { ArrowUpRight, ArrowDownLeft, BrainCircuit, TrendingDown, RefreshCcw, Sh
 import HealthScoreCard from './HealthScoreCard';
 import FinancialTimeline from './FinancialTimeline';
 import SyncDiagnostics from './SyncDiagnostics';
+import { GlobalDashboard } from './admin/GlobalDashboard';
+import { supabase } from "../services/supabase";
+import { X, Bell } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
-  const { totalBalance, availableAfterCommitments, walletsWithBalances, transactions, isCloudLoading, getCurrencySymbol, settings, setActiveTab } = useFinance();
+  const { totalBalance, availableAfterCommitments, walletsWithBalances, transactions, isCloudLoading, getCurrencySymbol, settings, setActiveTab, isSuperAdmin } = useFinance();
   const [insights, setInsights] = useState<FinancialInsight[]>([]);
   const [displayBalance, setDisplayBalance] = useState(0);
   const [toolViewMode, setToolViewMode] = useState<'grid' | 'list'>('grid');
 
+  // Update Signal State
+  const [activeSignal, setActiveSignal] = useState<{ id: string; message: string; type: string } | null>(null);
+
   const isBN = settings.language === 'BN';
   const isCompact = settings.compactMode;
+
+
 
   const formatValue = (val: number, symbol?: string) => {
     if (settings.privacyMode) return '••••••';
@@ -47,11 +55,9 @@ const Dashboard: React.FC = () => {
       return;
     }
 
-    // Priority 2: Local Generation
-    if (transactions.length > 0) {
-      getFinancialInsights(transactions, walletsWithBalances).then(setInsights);
-    }
-  }, [transactions, walletsWithBalances, settings.globalAiInsights]);
+    // Auto-generation disabled - only Super Admin can generate insights
+    setInsights([]);
+  }, [settings.globalAiInsights]);
 
   useEffect(() => {
     // Listen for manual regeneration requests from Admin Panel
@@ -63,6 +69,38 @@ const Dashboard: React.FC = () => {
     window.addEventListener('FINOS_REFRESH_INSIGHTS', handleManualRefresh);
     return () => window.removeEventListener('FINOS_REFRESH_INSIGHTS', handleManualRefresh);
   }, [transactions, walletsWithBalances]);
+
+  useEffect(() => {
+    // Poll for active update signals (Lightweight: Once on mount)
+    const checkSignals = async () => {
+      const { data } = await supabase
+        .from('system_update_signals')
+        .select('id, message, update_type')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        const dismissedId = localStorage.getItem('finos_dismissed_signal');
+        if (dismissedId !== data.id) {
+          setActiveSignal({
+            id: data.id,
+            message: data.message,
+            type: data.update_type
+          });
+        }
+      }
+    };
+    checkSignals();
+  }, []);
+
+  const dismissSignal = () => {
+    if (activeSignal) {
+      localStorage.setItem('finos_dismissed_signal', activeSignal.id);
+      setActiveSignal(null);
+    }
+  };
 
   const chartData = transactions.slice(0, 7).reverse().map((t, i) => ({
     name: i.toString(),
@@ -91,8 +129,34 @@ const Dashboard: React.FC = () => {
     })
     .reduce((acc, t) => acc + t.amount, 0);
 
+  if (isSuperAdmin) {
+    return <GlobalDashboard />;
+  }
+
   return (
     <div className={`flex flex-col ${isCompact ? 'gap-2 pt-2' : 'gap-4 pt-4'} animate-in fade-in slide-in-from-bottom-4 duration-700`}>
+      {/* Update Signal Banner */}
+      {activeSignal && (
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-start gap-3 relative animate-in slide-in-from-top-2">
+          <div className="p-2 bg-emerald-500/20 rounded-full text-emerald-500 shrink-0">
+            <Bell size={16} />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-white uppercase tracking-tight flex items-center gap-2">
+              System Update Available
+              <span className="text-[9px] px-2 py-0.5 bg-emerald-500 text-black rounded font-black">{activeSignal.type}</span>
+            </h4>
+            <p className="text-xs text-zinc-400 mt-1">{activeSignal.message}</p>
+          </div>
+          <button
+            onClick={dismissSignal}
+            className="p-1.5 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-colors"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Total Balance & Summary Card */}
       <GlassCard
         className={`relative overflow-hidden border-[var(--accent-primary)]/30 flex flex-col justify-between ${isCompact ? 'min-h-[160px] p-4' : 'min-h-[220px] p-6'}`}

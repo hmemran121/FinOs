@@ -13,8 +13,11 @@ interface WalletFormProps {
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
 
+import { useFeedback } from '../store/FeedbackContext';
+
 const WalletForm: React.FC<WalletFormProps> = ({ onClose, editWallet }) => {
     const { addWallet, updateWallet, wallets, channelTypes, currencies, settings } = useFinance();
+    const { showFeedback } = useFeedback();
 
     const [name, setName] = useState(editWallet?.name || '');
     const [currency, setCurrency] = useState(editWallet?.currency || settings.currency || 'USD');
@@ -100,6 +103,12 @@ const WalletForm: React.FC<WalletFormProps> = ({ onClose, editWallet }) => {
             return; // Block submission if name is empty
         }
 
+        // Validate that at least one channel is selected
+        if (Object.keys(allocation).length === 0) {
+            showFeedback('At least one settlement channel is required.', 'error');
+            return;
+        }
+
         const validChannels = Object.entries(allocation).map(([type, bal]) => ({
             id: editWallet?.channels.find(c => c.type === type)?.id || '', // Maintain ID if editing
             type,
@@ -127,12 +136,19 @@ const WalletForm: React.FC<WalletFormProps> = ({ onClose, editWallet }) => {
             channels: validChannels
         };
 
-        if (editWallet) {
-            await updateWallet(editWallet.id, walletData);
-        } else {
-            await addWallet(walletData);
+        try {
+            if (editWallet) {
+                await updateWallet(editWallet.id, walletData);
+                showFeedback('Wallet details updated successfully.', 'success');
+            } else {
+                await addWallet(walletData);
+                showFeedback('New wallet created successfully!', 'success');
+            }
+            onClose();
+        } catch (err) {
+            showFeedback('Failed to save wallet. Please try again.', 'error');
+            console.error(err);
         }
-        onClose();
     };
 
     // Helper to get icon component dynamically

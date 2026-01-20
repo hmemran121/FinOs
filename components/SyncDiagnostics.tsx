@@ -15,7 +15,10 @@ const SyncDiagnostics: React.FC = () => {
 
     const staticTableNames = ['categories_global', 'channel_types', 'plan_suggestions'];
     const localTotalStatic = Object.values(syncStatus.staticVersions).reduce((a, b) => a + Number(b || 0), 0);
-    const serverTotalStatic = syncStatus.serverStaticVersions ? Object.values(syncStatus.serverStaticVersions).reduce((a, b) => a + Number(b || 0), 0) : localTotalStatic;
+    // FIX: Sum all keys from server object, do not default to 0 if exists
+    const serverTotalStatic = syncStatus.serverStaticVersions && Object.keys(syncStatus.serverStaticVersions).length > 0
+        ? Object.values(syncStatus.serverStaticVersions).reduce((a, b) => a + Number(b || 0), 0)
+        : localTotalStatic;
 
     return (
         <section className="mt-8 mb-4">

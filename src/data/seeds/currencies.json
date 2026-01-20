@@ -1,0 +1,222 @@
+[
+  {
+    "code": "USD",
+    "name": "US Dollar",
+    "symbol": "$",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "EUR",
+    "name": "Euro",
+    "symbol": "€",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "GBP",
+    "name": "British Pound",
+    "symbol": "£",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "JPY",
+    "name": "Japanese Yen",
+    "symbol": "¥",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "CNY",
+    "name": "Chinese Yuan",
+    "symbol": "¥",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "INR",
+    "name": "Indian Rupee",
+    "symbol": "₹",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "BDT",
+    "name": "Bangladeshi Taka",
+    "symbol": "৳",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "CAD",
+    "name": "Canadian Dollar",
+    "symbol": "C$",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "AUD",
+    "name": "Australian Dollar",
+    "symbol": "A$",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "BRL",
+    "name": "Brazilian Real",
+    "symbol": "R$",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "AED",
+    "name": "UAE Dirham",
+    "symbol": "د.إ",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "SAR",
+    "name": "Saudi Riyal",
+    "symbol": "﷼",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "KRW",
+    "name": "South Korean Won",
+    "symbol": "₩",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "SGD",
+    "name": "Singapore Dollar",
+    "symbol": "S$",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "CHF",
+    "name": "Swiss Franc",
+    "symbol": "Fr",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "RUB",
+    "name": "Russian Ruble",
+    "symbol": "₽",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "TRY",
+    "name": "Turkish Lira",
+    "symbol": "₺",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "IDR",
+    "name": "Indonesian Rupiah",
+    "symbol": "Rp",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "THB",
+    "name": "Thai Baht",
+    "symbol": "฿",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  },
+  {
+    "code": "MXN",
+    "name": "Mexican Peso",
+    "symbol": "$",
+    "updated_at": 1767541715524,
+    "version": 1,
+    "device_id": "unknown",
+    "is_deleted": false,
+    "server_updated_at": 1767681264889,
+    "user_id": null
+  }
+]

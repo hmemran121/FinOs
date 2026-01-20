@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { useFeedback } from '../store/FeedbackContext';
 import { useFinance } from '../store/FinanceContext';
 import { MasterCategoryType, Category } from '../types';
 import { ICON_MAP, COLORS } from '../constants';
@@ -23,6 +24,7 @@ import { generateEmbedding } from '../services/gemini';
 
 const CategoryManager: React.FC = () => {
   const { categories, addCategory, deleteCategory, toggleCategoryStatus, updateCategory } = useFinance();
+  const { showFeedback } = useFeedback();
   const [activeTab, setActiveTab] = useState<MasterCategoryType>(MasterCategoryType.EXPENSE);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -77,6 +79,7 @@ const CategoryManager: React.FC = () => {
     setNewCatName('');
     setIsAdding(false);
     setIsGenerating(false);
+    showFeedback('Category classification created.', 'success');
   };
 
   return (
@@ -223,7 +226,7 @@ const CategoryManager: React.FC = () => {
         onConfirm={() => {
           if (deleteId) {
             deleteCategory(deleteId);
-            setDeleteId(null);
+            showFeedback('Category removed from taxonomy.', 'success');
           }
         }}
         title="Delete Category"

@@ -14,7 +14,7 @@
 
   --text-main: #0f172a;
   --text-secondary: #334155;
-  --text-muted: #64748b;
+  --text-muted: #475569; /* Darkened for better readability */
   --text-dim: #94a3b8;
 
   --surface-deep: #ffffff;
@@ -53,17 +53,17 @@
     radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
 
   --text-main: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-dim: #3f3f46;
+  --text-secondary: #e4e4e7; /* Lightened */
+  --text-muted: #a1a1aa; /* Lightened from 71717a */
+  --text-dim: #52525b;
 
   --surface-deep: #0a0a0c;
   --surface-card: #0f0f12;
   --surface-overlay: #121215;
-  --surface-glass: rgba(255, 255, 255, 0.03);
+  --surface-glass: rgba(20, 20, 23, 0.7); /* Deepened opacity for contrast */
 
-  --border-glass: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-glass: rgba(255, 255, 255, 0.12); /* Increased border visibility */
+  --border-subtle: rgba(255, 255, 255, 0.08);
 
   --input-bg: #18181b;
   --nav-bg: rgba(10, 10, 12, 0.8);
@@ -232,4 +232,41 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite linear;
+}
+
+@keyframes haptic-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px) rotate(-1deg); }
+  75% { transform: translateX(4px) rotate(1deg); }
+}
+
+.animate-haptic-shake {
+  animation: haptic-shake 0.2s ease-in-out;
+}
+
+@keyframes bounce-short {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-bounce-short {
+  animation: bounce-short 0.4s ease-out;
+}
+
+@keyframes particle-blast {
+  0% { transform: scale(1); opacity: 1; filter: blur(0); }
+  100% { transform: scale(2); opacity: 0; filter: blur(20px); }
+}
+
+.animate-particle-blast {
+  animation: particle-blast 0.8s forwards ease-out;
 }

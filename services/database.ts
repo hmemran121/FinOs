@@ -6,6 +6,13 @@ import { defineCustomElements as jeepSqlite } from 'jeep-sqlite/loader';
 import { Preferences } from '@capacitor/preferences';
 import { PLAN_SUGGESTIONS_SEED } from '../data/planSuggestionsData';
 
+// Bundled Static Data Seeds (v1)
+import currenciesSeed from '../src/data/seeds/currencies.json';
+import channelTypesSeed from '../src/data/seeds/channel_types.json';
+import categoriesGlobalSeed from '../src/data/seeds/categories_global.json';
+import planSuggestionsSeed from '../src/data/seeds/plan_suggestions.json';
+import staticVersionsSeed from '../src/data/seeds/static_versions.json';
+
 // Initialize the jeep-sqlite element immediately
 if (Capacitor.getPlatform() === 'web') {
     jeepSqlite(window);
@@ -139,15 +146,24 @@ class DatabaseKernel {
         return this.initPromise;
     }
 
-    private currentSchemaVersion: number = 28;
+    private currentSchemaVersion: number = 29;
 
     private async applySchema() {
         if (!this.db) throw new Error('DB handle lost during schema application');
 
-        // 0. Get current version
+        // 0. Startup Pruning: Skip Heavy Checks if Version Matches
         await this.db.execute(`CREATE TABLE IF NOT EXISTS meta_schema (version INTEGER PRIMARY KEY)`);
         const verRes = await this.db.query('SELECT version FROM meta_schema');
         let oldVersion = verRes.values && verRes.values.length > 0 ? verRes.values[0].version : 0;
+
+        if (oldVersion === this.currentSchemaVersion) {
+            // Already optimized?
+            const tableCheck = await this.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='meta_sync'");
+            if (tableCheck.values && tableCheck.values.length > 0) {
+                console.log(`⏩ [Kernel] Schema v${oldVersion} matches. Skipping Heavy Migrations.`);
+                return;
+            }
+        }
 
         console.log(`📡 [Kernel] Database Version Check: Current=${oldVersion}, Target=${this.currentSchemaVersion}`);
 
@@ -176,6 +192,10 @@ class DatabaseKernel {
             await this.db.execute(`ALTER TABLE meta_sync ADD COLUMN last_user_id TEXT`);
         } catch (e) { }
 
+        try {
+            await this.db.execute(`ALTER TABLE meta_sync ADD COLUMN clock_offset INTEGER DEFAULT 0`);
+        } catch (e) { }
+
         // Cleanup: Remove old columns is not supported in SQLite easily, so we just ignore them.
 
         // Now safe to insert/ignore with the full column set
@@ -201,9 +221,9 @@ class DatabaseKernel {
             channels: `id TEXT PRIMARY KEY, wallet_id TEXT NOT NULL, type TEXT NOT NULL, balance REAL DEFAULT 0, ${syncFields}, FOREIGN KEY(wallet_id) REFERENCES wallets(id)`,
             transactions: `id TEXT PRIMARY KEY, amount REAL NOT NULL, date TEXT NOT NULL, wallet_id TEXT, channel_type TEXT, category_id TEXT, note TEXT, type TEXT, is_split INTEGER DEFAULT 0, to_wallet_id TEXT, to_channel_type TEXT, linked_transaction_id TEXT, is_sub_ledger_sync INTEGER DEFAULT 0, sub_ledger_id TEXT, sub_ledger_name TEXT, ${syncFields}`,
             transfers: `id TEXT PRIMARY KEY, from_wallet_id TEXT NOT NULL, to_wallet_id TEXT NOT NULL, from_channel TEXT NOT NULL, to_channel TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, note TEXT, ${syncFields}`,
-            commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, next_date TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', history TEXT DEFAULT '[]', is_recurring INTEGER DEFAULT 0, ${syncFields}`,
+            commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, category_id TEXT, next_date TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', history TEXT DEFAULT '[]', is_recurring INTEGER DEFAULT 0, ${syncFields}`,
             budgets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, category_id TEXT, period TEXT, ${syncFields}`,
-            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, gemini_keys TEXT, preferred_gemini_key_id TEXT, preferred_gemini_model TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, role TEXT DEFAULT 'MEMBER', organization_id TEXT, permissions TEXT DEFAULT '{}', is_super_admin INTEGER DEFAULT 0, ${syncFields}`,
+            profiles: `id TEXT PRIMARY KEY, email TEXT, name TEXT, currency TEXT, theme TEXT, ai_enabled INTEGER DEFAULT 1, biometric_enabled INTEGER DEFAULT 1, accent_color TEXT DEFAULT '#3b82f6', language TEXT DEFAULT 'EN', privacy_mode INTEGER DEFAULT 0, glass_intensity INTEGER DEFAULT 20, budget_start_day INTEGER DEFAULT 1, haptic_enabled INTEGER DEFAULT 1, animation_speed TEXT DEFAULT 'NORMAL', default_wallet_id TEXT, auto_sync INTEGER DEFAULT 1, decimal_places INTEGER DEFAULT 2, show_health_score INTEGER DEFAULT 1, compact_mode INTEGER DEFAULT 0, low_balance_threshold REAL DEFAULT 100, font_family TEXT DEFAULT 'PLUS_JAKARTA', animation_intensity TEXT DEFAULT 'MEDIUM', biometric_lock_timeout INTEGER DEFAULT 0, sound_effects_enabled INTEGER DEFAULT 1, is_admin_enabled INTEGER DEFAULT 0, custom_gemini_key TEXT, preferred_gemini_key_id TEXT, preferred_gemini_model TEXT, custom_supabase_url TEXT, is_read_only INTEGER DEFAULT 0, maintenance_mode INTEGER DEFAULT 0, custom_app_name TEXT, glass_effects_enabled INTEGER DEFAULT 1, custom_logo_url TEXT, role TEXT DEFAULT 'MEMBER', organization_id TEXT, permissions TEXT DEFAULT '{}', is_super_admin INTEGER DEFAULT 0, ${syncFields}`,
             currencies: `code TEXT PRIMARY KEY, name TEXT NOT NULL, symbol TEXT NOT NULL, ${syncFields}`,
             channel_types: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon_name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER DEFAULT 0, ${syncFields}`,
             financial_plans: `id TEXT PRIMARY KEY, wallet_id TEXT, plan_type TEXT, title TEXT, status TEXT, planned_date TEXT, finalized_at TEXT, total_amount REAL, note TEXT, ${syncFields}`,
@@ -338,7 +358,7 @@ class DatabaseKernel {
         }
         if (oldVersion < 24) {
             console.log("🛠️ [Database] Migrating to v24 (Multi-API Support)...");
-            try { await this.db.execute(`ALTER TABLE profiles ADD COLUMN gemini_keys TEXT`); } catch (e) { }
+
         }
         if (oldVersion < 25) {
             console.log("🛠️ [Database] Migrating to v25 (Vector Embeddings)...");
@@ -364,6 +384,11 @@ class DatabaseKernel {
         if (oldVersion < 28) {
             console.log("🛠️ [Database] Migrating to v28 (AI Analytics)...");
             // ai_usage_logs created by generic loop
+        }
+
+        if (oldVersion < 29) {
+            console.log("🛠️ [Database] Migrating to v29 (Ledger Categorization)...");
+            try { await this.db.execute(`ALTER TABLE commitments ADD COLUMN category_id TEXT`); } catch (e) { }
         }
 
         // Taxonomy Modernization (v14) - One-time hard reset for the new hierarchical system
@@ -446,25 +471,52 @@ class DatabaseKernel {
             );
         `);
 
-        // Hardening sync_queue: Ensure columns exist even if table was created in an older version
-        try {
-            await this.db.execute(`ALTER TABLE sync_queue ADD COLUMN operation TEXT NOT NULL DEFAULT 'INSERT'`);
-        } catch (e) { }
-        try {
-            await this.db.execute(`ALTER TABLE sync_queue ADD COLUMN retry_count INTEGER DEFAULT 0`);
-        } catch (e) { }
-        try {
-            await this.db.execute(`ALTER TABLE sync_queue ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`);
-        } catch (e) { }
+        // Hardening sync_queue: Ensure columns exist
+        // Note: Using try/catch for column addition is standard for cross-version SQLite compatibility
+        const safeAddColumn = async (table: string, colDef: string) => {
+            try {
+                await this.db.execute(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+            } catch (e: any) {
+                // Ignore "duplicate column" errors silently to reduce log noise
+                if (!e.message?.includes('duplicate column')) {
+                    console.warn(`⚠️ [Kernel] Column add warning for ${table}:`, e.message);
+                }
+            }
+        };
+
+        try { await this.db.execute(`ALTER TABLE plan_suggestions ADD COLUMN user_id TEXT`); } catch (e) { }
+
+        await safeAddColumn('sync_queue', "operation TEXT NOT NULL DEFAULT 'INSERT'");
+        await safeAddColumn('sync_queue', "retry_count INTEGER DEFAULT 0");
+        await safeAddColumn('sync_queue', "status TEXT NOT NULL DEFAULT 'pending'");
 
         await this.db.execute(`
             INSERT OR IGNORE INTO meta_sync (id, is_initialized, last_full_sync) VALUES (1, 0, 0);
         `);
 
         // 4. Version Tracking
+        // Finalize
+        // 5. Performance Indexes (Production Level)
+        try {
+            console.log("⚡ [Kernel] Verifying High-Speed Indexes...");
+            await this.db.execute(`
+                CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
+                CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+                CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
+                CREATE INDEX IF NOT EXISTS idx_plans_components ON financial_plan_components(plan_id);
+                CREATE INDEX IF NOT EXISTS idx_plans_settlements ON financial_plan_settlements(plan_id);
+            `);
+        } catch (e) {
+            console.warn("⚠️ [Kernel] Index creation warning:", e);
+        }
+
+        await this.db.query(`DELETE FROM meta_schema`);
+        await this.db.query(`INSERT INTO meta_schema (version) VALUES (?)`, [this.currentSchemaVersion]);
         console.log(`📡 [Kernel] Saving Schema Version: ${this.currentSchemaVersion}`);
-        await this.db.run(`DELETE FROM meta_schema`, [], false);
-        await this.db.run(`INSERT INTO meta_schema (version) VALUES (?)`, [this.currentSchemaVersion], false);
+        // --------------------------------------------------
+        // HYBRID ARCHITECTURE: STATIC DATA SEEDING (v1)
+        // --------------------------------------------------
+        await this.seedStaticDataIfEmpty();
 
         if (Capacitor.getPlatform() === 'web') {
             try {
@@ -522,7 +574,13 @@ class DatabaseKernel {
 
     private async enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
         this.writeQueue = this.writeQueue.then(async () => {
-            try { return await task(); } catch (e) {
+            try {
+                const res = await task();
+                if (Capacitor.getPlatform() === 'web') {
+                    await this.sqlite.saveToStore('finos_db');
+                }
+                return res;
+            } catch (e) {
                 console.error("⛔ [Kernel] Write operation failed:", e);
                 return null;
             }
@@ -608,12 +666,17 @@ class DatabaseKernel {
         });
     }
 
-    async delete(table: string, id: string) {
+    async delete(table: string, id: string, version?: number) {
         return this.enqueueWrite(async () => {
             const db = await this.getDb();
             const now = Date.now();
+            let nextVer = version;
+            if (nextVer === undefined) {
+                const res = await db.query(`SELECT version FROM ${table} WHERE id = ?`, [id]);
+                nextVer = (res.values?.[0]?.version || 1) + 1;
+            }
             const status = await db.isTransactionActive();
-            await db.run(`UPDATE ${table} SET is_deleted = 1, updated_at = ? WHERE id = ?`, [now, id], !status.result);
+            await db.run(`UPDATE ${table} SET is_deleted = 1, updated_at = ?, version = ? WHERE id = ?`, [now, nextVer, id], !status.result);
         });
     }
 
@@ -706,6 +769,79 @@ class DatabaseKernel {
             // but this method is low-level. The caller (FinanceContext) should handle sync.
         } catch (e) {
             console.error('Error ensuring plan suggestion:', e);
+        }
+    }
+
+    private async seedStaticDataIfEmpty() {
+        if (!this.db) return;
+        console.log("🌱 [Kernel] Checkpoint: Verifying Static Data Bundle...");
+
+        // Helper for safe batch insertion
+        const seedTable = async (tableName: string, data: any[]) => {
+            if (!data || data.length === 0) return;
+
+            try {
+                // 1. Check if empty
+                const res = await this.db!.query(`SELECT count(*) as count FROM ${tableName}`);
+                const count = res.values && res.values.length > 0 ? res.values[0].count : 0;
+
+                if (count === 0) {
+                    console.log(`🌱 [Kernel] Seeding ${data.length} rows into ${tableName}...`);
+
+                    // 2. Generate Bulk Insert
+                    // Note: We use INSERT OR IGNORE to be safe.
+                    const columns = Object.keys(data[0]).join(',');
+                    // Create (?,?,?) string
+                    const rowPlaceholder = `(${Object.keys(data[0]).map(() => '?').join(',')})`;
+
+                    // Process in chunks to avoid SQLite limit
+                    const CHUNK_SIZE = 50;
+                    const chunks = [];
+                    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+                        chunks.push(data.slice(i, i + CHUNK_SIZE));
+                    }
+
+                    for (const chunk of chunks) {
+                        const placeholders = chunk.map(() => rowPlaceholder).join(',');
+                        const values: any[] = [];
+                        chunk.forEach((row: any) => {
+                            Object.keys(data[0]).forEach(k => values.push(row[k]));
+                        });
+
+                        await this.db!.run(`INSERT OR IGNORE INTO ${tableName} (${columns}) VALUES ${placeholders}`, values);
+                    }
+
+                    console.log(`✅ [Kernel] Seeded ${tableName} successfully.`);
+                } else {
+                    console.log(`⏭️ [Kernel] ${tableName} has data (${count} rows). Skipping seed.`);
+                }
+            } catch (e) {
+                console.error(`❌ [Kernel] Failed to seed ${tableName}:`, e);
+            }
+        };
+
+        // Execution Order
+        await seedTable('currencies', currenciesSeed);
+        await seedTable('channel_types', channelTypesSeed);
+        await seedTable('categories_global', categoriesGlobalSeed);
+
+        // plan_suggestions usually large, executeSet handles it well
+        await seedTable('plan_suggestions', planSuggestionsSeed);
+
+        // 3. Set Base Version (Hybrid Authority)
+        // If we seeded data, we must tell existing sync engine that we are at "vX"
+        // so it doesn't overwrite us unless server is "vX+1".
+
+        // Note: staticVersionsSeed is { keys: val }. meta_sync.static_versions is stringified JSON.
+        try {
+            if (staticVersionsSeed && Object.keys(staticVersionsSeed).length > 0) {
+                await this.db!.run('UPDATE meta_sync SET static_versions = ? WHERE id = 1',
+                    [JSON.stringify(staticVersionsSeed)]
+                );
+                console.log("✅ [Kernel] Hybrid Version Authority anchored.", staticVersionsSeed);
+            }
+        } catch (e) {
+            console.warn("⚠️ [Kernel] Failed to anchor version:", e);
         }
     }
 }

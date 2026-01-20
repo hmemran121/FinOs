@@ -7,4 +7,10 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.error('❌ Supabase credentials missing in .env.local');
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false, // Prevents hash interference on mobile
+    },
+});

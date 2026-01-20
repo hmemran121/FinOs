@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useFeedback } from '../store/FeedbackContext';
 import { CurrencyPickerOverlay } from './ui/CurrencyPickerOverlay';
 import { useFinance } from '../store/FinanceContext';
 import { biometricService } from '../services/biometric';
@@ -42,8 +43,11 @@ import {
   Music,
   BellRing,
   Type as FontIcon,
-  Timer
+  Timer,
+  Camera
 } from 'lucide-react';
+import { databaseKernel } from '../services/database';
+
 
 const ACCENT_COLORS = [
   { name: 'Classic Blue', value: '#3b82f6' },
@@ -56,6 +60,7 @@ const ACCENT_COLORS = [
 
 const Settings: React.FC = () => {
   const { profile, settings, updateProfile, updateSettings, clearAllData, logout, transactions, categories, wallets, currencies, setActiveTab } = useFinance();
+  const { showFeedback } = useFeedback();
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(profile.name);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
@@ -63,13 +68,13 @@ const Settings: React.FC = () => {
   const [pinInput, setPinInput] = useState('');
 
   const handlePinSubmit = () => {
-    if (pinInput === '0000') {
-      updateSettings({ isAdminEnabled: true });
+    if (pinInput === '0000' && profile.isSuperAdmin) {
       setActiveTab('admin');
       setShowAdminPinModal(false);
       setPinInput('');
+      showFeedback('Admin privileges granted.', 'success');
     } else {
-      alert(isBN ? "ভুল পিন!" : "Incorrect PIN!");
+      showFeedback(isBN ? "ভুল পিন!" : "Incorrect PIN!", 'error');
       setPinInput('');
     }
   };
@@ -78,19 +83,44 @@ const Settings: React.FC = () => {
     console.log("🛠️ Attempting Admin Console Access...");
     const pin = prompt(isBN ? "অ্যাডমিন পিন দিন (Default: 0000):" : "Enter Admin PIN (Default: 0000):");
 
-    if (pin === '0000') {
+    if (pin === '0000' && profile.isSuperAdmin) {
       console.log("✅ PIN Correct. Redirecting...");
-      updateSettings({ isAdminEnabled: true });
       setActiveTab('admin');
+      showFeedback('Admin access granted.', 'success');
     } else if (pin !== null) {
-      alert(isBN ? "ভুল পিন!" : "Incorrect PIN!");
+      showFeedback(isBN ? "ভুল পিন!" : "Incorrect PIN!", 'error');
     }
   };
 
   const handleSaveName = () => {
     updateProfile({ name: tempName });
     setIsEditingName(false);
+    showFeedback('Profile name updated.', 'success');
   };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showFeedback(isBN ? 'অনগ্রহ করে একটি ছবি ফাইল নির্বাচন করুন' : 'Please select an image file', 'error');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      showFeedback(isBN ? 'ছবির সাইজ ২ এমবি-এর কম হতে হবে' : 'Image size must be less than 2MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target?.result as string;
+      updateProfile({ avatar: base64 });
+      showFeedback('Profile photo updated.', 'success');
+    };
+    reader.readAsDataURL(file);
+  };
+
 
   const exportData = () => {
     const data = transactions.map(t => {
@@ -142,12 +172,23 @@ const Settings: React.FC = () => {
             <User size={80} />
           </div>
           <div className="flex items-center gap-6 relative z-10">
-            <div
-              className={`w-20 h-20 rounded-[30px] flex items-center justify-center text-3xl font-black shadow-2xl transition-all group-hover:scale-105 duration-500 ${settings.isAdminEnabled ? 'ring-4 ring-rose-500 ring-offset-4 ring-offset-black' : ''}`}
-              style={{ background: `linear-gradient(135deg, ${settings.accentColor}, #000)`, boxShadow: `0 20px 40px ${settings.accentColor}33` }}
-            >
-              <span className="text-white drop-shadow-md">{profile.name.charAt(0)}</span>
+            <div className="relative group/avatar">
+              <div
+                className={`w-20 h-20 rounded-[30px] overflow-hidden flex items-center justify-center text-3xl font-black shadow-2xl transition-all group-hover/avatar:scale-105 duration-500 ${profile.isSuperAdmin ? 'ring-4 ring-rose-500 ring-offset-4 ring-offset-black' : ''}`}
+                style={{ background: `linear-gradient(135deg, ${settings.accentColor}, #000)`, boxShadow: `0 20px 40px ${settings.accentColor}33` }}
+              >
+                {profile.avatar ? (
+                  <img src={profile.avatar} alt={profile.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-white drop-shadow-md">{profile.name.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+              <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer rounded-[30px]">
+                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                <Camera className="text-white" size={24} />
+              </label>
             </div>
+
             <div className="flex-1 min-w-0">
               {isEditingName ? (
                 <div className="flex items-center gap-2">
@@ -183,6 +224,7 @@ const Settings: React.FC = () => {
             </div>
           </div>
         </GlassCard>
+
       </section>
 
       {/* Aesthetics & Customization */}
@@ -285,7 +327,7 @@ const Settings: React.FC = () => {
             onClick={async () => {
               const available = await biometricService.checkAvailability();
               if (!available.isAvailable) {
-                alert(isBN ? "এই ডিভাইসে বায়োমেট্রিক হার্ডওয়্যার নেই।" : "Biometric hardware not available on this device.");
+                showFeedback(isBN ? "এই ডিভাইসে বায়োমেট্রিক হার্ডওয়্যার নেই।" : "Biometric hardware not available on this device.", 'error');
                 return;
               }
               const verified = await biometricService.verifyIdentity();
@@ -315,7 +357,7 @@ const Settings: React.FC = () => {
             icon={<Lock size={18} />}
             label={isBN ? 'সিস্টেম পিন রিসেট' : 'Reset System PIN'}
             value="****"
-            onClick={() => alert('PIN reset sequence initiated. (Simulation)')}
+            onClick={() => showFeedback('PIN reset sequence initiated. (Simulation)', 'info')}
           />
         </div>
       </section>

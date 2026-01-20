@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useFeedback } from '../store/FeedbackContext';
 import { useFinance } from '../store/FinanceContext';
 import { Commitment, CommitmentType, CommitmentFrequency, CertaintyLevel } from '../types';
 import { GlassCard, NeumorphButton } from './ui/GlassCard';
@@ -8,7 +9,7 @@ import {
     X, Plus, Calendar, Shield, CreditCard, ShoppingBag,
     Trash2, Edit3, Check, AlertCircle, Info, ArrowRightCircle,
     Zap, Wallet, Clock, ArrowUpRight, History, ShieldCheck,
-    ChevronDown, Layers, ChevronLeft, ChevronRight
+    ChevronDown, Layers, ChevronLeft, ChevronRight, Tag, Search, Sparkles
 } from 'lucide-react';
 import {
     format, isSameDay, startOfMonth, endOfMonth, isWithinInterval,
@@ -17,6 +18,8 @@ import {
 } from 'date-fns';
 import DynamicDeleteModal from './modals/DynamicDeleteModal';
 import { PremiumCalendarPicker } from './ui/PremiumCalendarPicker';
+import { ICON_MAP } from '../constants';
+import { MasterCategoryType, Category } from '../types';
 
 
 const CommitmentManager: React.FC = () => {
@@ -24,8 +27,9 @@ const CommitmentManager: React.FC = () => {
         commitments, addCommitment, deleteCommitment, getCurrencySymbol,
         settings, availableAfterCommitments, totalBalance, totalMonthlyCommitments,
         settleCommitment, extendCommitmentDate, postponeCommitment,
-        suggestedObligationNames, wallets
+        suggestedObligationNames, walletsWithBalances: wallets, categories
     } = useFinance();
+    const { showFeedback } = useFeedback();
     const [showForm, setShowForm] = useState(false);
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [selectedCommitmentId, setSelectedCommitmentId] = useState<string | null>(null);
@@ -232,10 +236,32 @@ const CommitmentManager: React.FC = () => {
                                         <div className="flex justify-between items-start relative z-10">
                                             <div className="flex gap-4">
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border border-[var(--border-glass)] shadow-inner transition-colors ${cm.status === 'SETTLED' ? 'bg-emerald-500/10' : 'bg-[var(--surface-deep)]'}`}>
-                                                    {cm.status === 'SETTLED' ? <Check size={18} className="text-emerald-500" /> : getCommitmentIcon(cm.type)}
+                                                    {cm.status === 'SETTLED' ? (
+                                                        <Check size={18} className="text-emerald-500" />
+                                                    ) : (() => {
+                                                        const cat = categories.find(c => c.id === cm.categoryId);
+                                                        if (cat) {
+                                                            const iconNode = ICON_MAP[cat.icon] || ICON_MAP['Tag'];
+                                                            if (React.isValidElement(iconNode)) {
+                                                                return React.cloneElement(iconNode as React.ReactElement, {
+                                                                    // @ts-ignore - Lucide icons accept size and style
+                                                                    size: 18,
+                                                                    style: { color: cat.color }
+                                                                });
+                                                            }
+                                                        }
+                                                        return getCommitmentIcon(cm.type);
+                                                    })()}
                                                 </div>
                                                 <div>
-                                                    <h4 className="font-black text-sm text-[var(--text-main)] tracking-tight transition-colors">{cm.name}</h4>
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="font-black text-sm text-[var(--text-main)] tracking-tight transition-colors">{cm.name}</h4>
+                                                        {cm.categoryId && (
+                                                            <span className="text-[9px] font-black uppercase text-[var(--text-muted)] opacity-50 px-2 py-0.5 bg-[var(--surface-deep)] rounded-lg">
+                                                                {categories.find(c => c.id === cm.categoryId)?.name}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${cm.status === 'SETTLED' ? 'bg-emerald-500/10 text-emerald-500' : getCertaintyColor(cm.certaintyLevel)}`}>
                                                             {cm.status === 'SETTLED' ? 'Completed' : cm.certaintyLevel}
@@ -298,6 +324,7 @@ const CommitmentManager: React.FC = () => {
                     onSubmit={addCommitment}
                     currency={getCurrencySymbol(settings.currency)}
                     suggestions={suggestedObligationNames}
+                    categories={categories}
                 />
             )}
 
@@ -307,7 +334,7 @@ const CommitmentManager: React.FC = () => {
                 onConfirm={() => {
                     if (deleteId) {
                         deleteCommitment(deleteId);
-                        setDeleteId(null);
+                        showFeedback('Commitment removed.', 'success');
                     }
                 }}
                 title="Delete Commitment"
@@ -334,7 +361,14 @@ const CommitmentManager: React.FC = () => {
     );
 };
 
-const CommitmentForm: React.FC<{ onClose: () => void, onSubmit: (c: any) => void, currency: string, suggestions: string[] }> = ({ onClose, onSubmit, currency, suggestions }) => {
+const CommitmentForm: React.FC<{
+    onClose: () => void,
+    onSubmit: (c: any) => void,
+    currency: string,
+    suggestions: string[],
+    categories: Category[]
+}> = ({ onClose, onSubmit, currency, suggestions, categories }) => {
+    const { showFeedback } = useFeedback();
     const [name, setName] = useState('');
     const [amount, setAmount] = useState('');
     const [type, setType] = useState<CommitmentType>(CommitmentType.FIXED);
@@ -343,16 +377,46 @@ const CommitmentForm: React.FC<{ onClose: () => void, onSubmit: (c: any) => void
     const [payoutDate, setPayoutDate] = useState(new Date());
     const [isRecurring, setIsRecurring] = useState(true);
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [categoryId, setCategoryId] = useState('');
+    const [showCatPicker, setShowCatPicker] = useState(false);
+    const [searchCat, setSearchCat] = useState('');
+
+    const groupedCategories = useMemo(() => {
+        const query = searchCat.toLowerCase().trim();
+        const roots = categories.filter(c => {
+            const type = String(c.type || '').toUpperCase();
+            const matchesType = type === MasterCategoryType.EXPENSE ||
+                type === MasterCategoryType.SAVING ||
+                type === MasterCategoryType.INVESTMENT;
+            const isRoot = !c.parentId || c.parentId === "";
+            const isEnabled = !c.isDisabled;
+            return matchesType && isRoot && isEnabled;
+        });
+
+        return roots.map(root => {
+            const children = categories.filter(c => c.parentId === root.id && !c.isDisabled);
+            const rootMatches = root.name.toLowerCase().includes(query);
+            const matchingChildren = children.filter(child => child.name.toLowerCase().includes(query));
+
+            if (!query || rootMatches || matchingChildren.length > 0) {
+                return {
+                    root,
+                    children: query && !rootMatches ? matchingChildren : children
+                };
+            }
+            return null;
+        }).filter((group): group is { root: Category; children: Category[] } => group !== null);
+    }, [categories, searchCat]);
 
     return (
         <div className="fixed inset-0 w-screen h-screen z-[500] bg-black/75 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
-            <GlassCard className="w-full max-w-sm p-8 border-[var(--border-glass)] space-y-6 bg-[var(--surface-overlay)] transition-colors">
-                <div className="flex justify-between items-center mb-2">
+            <GlassCard className="w-full max-w-sm p-8 border-[var(--border-glass)] space-y-6 bg-[var(--surface-overlay)] transition-colors overflow-hidden relative flex flex-col max-h-[90vh]">
+                <div className="flex justify-between items-center mb-2 shrink-0">
                     <h2 className="text-xl font-black tracking-tighter text-[var(--text-main)] transition-colors">New Commitment</h2>
                     <button onClick={onClose} className="p-2 text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"><X size={20} /></button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="flex-1 overflow-y-auto no-scrollbar space-y-6">
                     <div className="space-y-2">
                         <label className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-1 transition-colors">Identity</label>
                         <input
@@ -365,6 +429,25 @@ const CommitmentForm: React.FC<{ onClose: () => void, onSubmit: (c: any) => void
                         <datalist id="commitment-suggestions">
                             {suggestions.map(s => <option key={s} value={s} />)}
                         </datalist>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] px-1 transition-colors">Taxonomy</label>
+                        <button
+                            type="button"
+                            onClick={() => setShowCatPicker(true)}
+                            className="w-full group relative flex items-center gap-4 p-4 rounded-2xl bg-[var(--surface-deep)] border border-[var(--border-glass)] hover:border-blue-500/50 transition-all duration-300"
+                        >
+                            <div className="w-10 h-10 rounded-xl bg-[var(--input-bg)] flex items-center justify-center border border-[var(--border-glass)] text-blue-500 group-hover:scale-110 transition-transform">
+                                {categoryId ? ICON_MAP[categories.find(c => c.id === categoryId)?.icon || 'Tag'] : <Layers size={18} />}
+                            </div>
+                            <div className="flex-1 text-left">
+                                <p className="text-[10px] font-black text-[var(--text-main)] tracking-tight">
+                                    {categoryId ? categories.find(c => c.id === categoryId)?.name : 'Select Category'}
+                                </p>
+                            </div>
+                            <ChevronRight size={16} className="text-[var(--text-muted)]" />
+                        </button>
                     </div>
 
                     <div className="space-y-2">
@@ -440,25 +523,105 @@ const CommitmentForm: React.FC<{ onClose: () => void, onSubmit: (c: any) => void
                     </div>
                 </div>
 
-                <button
-                    onClick={() => {
-                        if (!name || !amount) return;
-                        onSubmit({
-                            name,
-                            amount: parseFloat(amount),
-                            type,
-                            frequency,
-                            certaintyLevel: certainty,
-                            isRecurring,
-                            nextDate: payoutDate.toISOString()
-                        });
-                        onClose();
-                    }}
-                    className="w-full bg-blue-600 text-white py-5 rounded-[24px] font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-3"
-                >
-                    <ArrowRightCircle size={18} />
-                    <span>Commit Provision</span>
-                </button>
+                <div className="pt-4 shrink-0">
+                    <button
+                        onClick={() => {
+                            if (!name || !amount || !categoryId) {
+                                if (!categoryId) showFeedback("Please select a category", 'error');
+                                return;
+                            }
+                            onSubmit({
+                                name,
+                                amount: parseFloat(amount),
+                                type,
+                                frequency,
+                                certaintyLevel: certainty,
+                                nextDate: payoutDate.toISOString(),
+                                isRecurring,
+                                categoryId
+                            });
+                            onClose();
+                            showFeedback('Commitment added successfully.', 'success');
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4"
+                    >
+                        <Sparkles size={18} />
+                        <span>Commit Obligation</span>
+                    </button>
+                </div>
+
+                {/* Taxonomy Overlay Picker (Adapted from TransactionForm) */}
+                {showCatPicker && (
+                    <div className="absolute inset-0 z-[100] bg-[var(--surface-overlay)] flex flex-col animate-in fade-in slide-in-from-bottom-10 duration-500 rounded-[40px] overflow-hidden">
+                        <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--border-glass)] bg-[var(--surface-overlay)] shrink-0">
+                            <div>
+                                <h2 className="text-lg font-black text-[var(--text-main)] tracking-tighter">Taxonomy</h2>
+                            </div>
+                            <button
+                                onClick={() => { setShowCatPicker(false); setSearchCat(''); }}
+                                className="p-2 rounded-xl bg-[var(--surface-deep)] border border-[var(--border-glass)] text-[var(--text-muted)]"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="px-6 py-4 shrink-0">
+                            <div className="relative group">
+                                <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                                <input
+                                    placeholder="Search segments..."
+                                    className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-xl py-3 pl-10 pr-4 text-xs font-bold outline-none focus:border-blue-500/50 text-[var(--text-main)]"
+                                    value={searchCat}
+                                    onChange={(e) => setSearchCat(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto px-6 pb-20 no-scrollbar space-y-4">
+                            {groupedCategories.length === 0 ? (
+                                <div className="py-12 text-center space-y-3">
+                                    <div className="w-12 h-12 bg-[var(--input-bg)] rounded-full flex items-center justify-center mx-auto opacity-30">
+                                        <Search size={20} />
+                                    </div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)]">No Categories Found</p>
+                                </div>
+                            ) : (
+                                groupedCategories.map((group: { root: Category, children: Category[] }) => (
+                                    <div key={group.root.id} className="space-y-2">
+                                        <div className="flex items-center gap-2 sticky top-0 bg-[var(--surface-overlay)] py-1 z-10 transition-colors">
+                                            <h5 className="text-[8px] font-black text-[var(--text-muted)] uppercase tracking-widest">{group.root.name}</h5>
+                                            <div className="flex-1 h-[1px] bg-[var(--border-glass)]" />
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-1">
+                                            <button
+                                                onClick={() => { setCategoryId(group.root.id); setShowCatPicker(false); setSearchCat(''); }}
+                                                className={`w-full flex items-center gap-3 p-2 rounded-xl transition-all ${categoryId === group.root.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--surface-deep)] text-[var(--text-muted)]'}`}
+                                            >
+                                                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black/20">
+                                                    {ICON_MAP[group.root.icon || 'Tag'] || <Layers size={14} />}
+                                                </div>
+                                                <span className="text-xs font-bold">General {group.root.name}</span>
+                                            </button>
+                                            {group.children.map((child: Category) => (
+                                                <button
+                                                    key={child.id}
+                                                    onClick={() => { setCategoryId(child.id); setShowCatPicker(false); setSearchCat(''); }}
+                                                    className={`w-full flex items-center gap-3 p-2 rounded-xl transition-all ${categoryId === child.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--surface-deep)] text-[var(--text-muted)]'}`}
+                                                >
+                                                    <div className="w-8 h-8"></div>
+                                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black/20">
+                                                        {ICON_MAP[child.icon || 'Tag'] || <Tag size={14} />}
+                                                    </div>
+                                                    <span className="text-xs font-bold">{child.name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
             </GlassCard>
         </div>
     );
@@ -474,8 +637,9 @@ const CommitmentDetailsModal: React.FC<{
     wallets: any[],
     currency: string
 }> = ({ commitment, onClose, onSettle, onExtend, onPostpone, wallets, currency }) => {
+    const { showFeedback } = useFeedback();
     const [selectedWalletId, setSelectedWalletId] = useState(wallets[0]?.id || '');
-    const [selectedChannel, setSelectedChannel] = useState(wallets[0]?.channels[0]?.type || '');
+    const [selectedChannel, setSelectedChannel] = useState(wallets[0]?.computedChannels[0]?.type || '');
     const [isSettling, setIsSettling] = useState(false);
     const [isPostponing, setIsPostponing] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
@@ -484,13 +648,14 @@ const CommitmentDetailsModal: React.FC<{
     const [showCustomDate, setShowCustomDate] = useState(false);
     const [customDate, setCustomDate] = useState(format(new Date(commitment.nextDate), 'yyyy-MM-dd'));
     const [isWalletSelectorOpen, setIsWalletSelectorOpen] = useState(false);
+    const [isChannelSelectorOpen, setIsChannelSelectorOpen] = useState(false);
 
     useEffect(() => {
         setCustomDate(format(new Date(commitment.nextDate), 'yyyy-MM-dd'));
     }, [commitment.nextDate]);
 
     const selectedWallet = wallets.find(w => w.id === selectedWalletId);
-    const selectedChannelData = selectedWallet?.channels.find((c: any) => c.type === selectedChannel);
+    const selectedChannelData = selectedWallet?.computedChannels.find((c: any) => c.type === selectedChannel);
     const currentBalance = selectedChannelData?.balance || 0;
     const projectedBalance = currentBalance - commitment.amount;
 
@@ -631,6 +796,7 @@ const CommitmentDetailsModal: React.FC<{
                                                     await onPostpone(commitment.id, chip.val);
                                                     setIsPostponing(false);
                                                     setShowSuccess(true);
+                                                    showFeedback('Commitment postponed.', 'success');
                                                     setTimeout(() => setShowSuccess(false), 2000);
                                                 }}
                                                 className="grow bg-[var(--surface-deep)] hover:bg-amber-500/10 border border-[var(--border-glass)] hover:border-amber-500/50 p-3 rounded-2xl flex flex-col items-center gap-1 transition-all group disabled:opacity-50"
@@ -661,6 +827,7 @@ const CommitmentDetailsModal: React.FC<{
                                                     setIsPostponing(false);
                                                     setShowSuccess(true);
                                                     setShowCustomDate(false);
+                                                    showFeedback('Commitment date updated.', 'success');
                                                     setTimeout(() => setShowSuccess(false), 2000);
                                                 }}
                                                 className="w-full py-4 bg-amber-600 text-white rounded-[22px] text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-amber-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 group overflow-hidden relative"
@@ -697,7 +864,7 @@ const CommitmentDetailsModal: React.FC<{
                                                     {selectedWallet?.name || 'Select Asset Source'}
                                                 </p>
                                                 <p className="text-[8px] font-bold text-[var(--text-muted)] uppercase tracking-widest opacity-70">
-                                                    Liquidity: {currency}{selectedWallet?.channels.reduce((sum: number, c: any) => sum + (c.balance || 0), 0).toLocaleString()}
+                                                    Liquidity: {currency}{selectedWallet?.currentBalance?.toLocaleString() || '0'}
                                                 </p>
                                             </div>
                                         </div>
@@ -718,7 +885,7 @@ const CommitmentDetailsModal: React.FC<{
                                                             key={w.id}
                                                             onClick={() => {
                                                                 setSelectedWalletId(w.id);
-                                                                if (w.channels.length) setSelectedChannel(w.channels[0].type);
+                                                                if (w.computedChannels.length) setSelectedChannel(w.computedChannels[0].type);
                                                                 setIsWalletSelectorOpen(false);
                                                             }}
                                                             className={`w-full flex items-center justify-between p-3 rounded-xl transition-all group mb-0.5 last:mb-0 ${selectedWalletId === w.id
@@ -733,13 +900,13 @@ const CommitmentDetailsModal: React.FC<{
                                                                 <div className="text-left">
                                                                     <p className="text-[10px] font-black text-[var(--text-main)] uppercase tracking-tight">{w.name}</p>
                                                                     <p className="text-[7px] font-black text-[var(--text-muted)] uppercase tracking-widest opacity-60">
-                                                                        {w.channels.length} {w.channels.length === 1 ? 'Channel' : 'Channels'}
+                                                                        {w.computedChannels.length} {w.computedChannels.length === 1 ? 'Channel' : 'Channels'}
                                                                     </p>
                                                                 </div>
                                                             </div>
                                                             <div className="text-right">
                                                                 <p className={`text-[9px] font-black ${selectedWalletId === w.id ? 'text-blue-500' : 'text-[var(--text-main)]'}`}>
-                                                                    {currency}{w.channels.reduce((sum: number, c: any) => sum + (c.balance || 0), 0).toLocaleString()}
+                                                                    {currency}{w.currentBalance.toLocaleString()}
                                                                 </p>
                                                                 {selectedWalletId === w.id && (
                                                                     <div className="flex justify-end mt-0.5">
@@ -755,6 +922,43 @@ const CommitmentDetailsModal: React.FC<{
                                     )}
                                 </div>
                             </div>
+
+                            {/* Channel Selection - Card Style */}
+                            {selectedWallet && (
+                                <div className="space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-400">
+                                    <div className="flex items-center justify-between px-1">
+                                        <label className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Funding Channel</label>
+                                        <span className="text-[7px] font-black text-amber-500 uppercase tracking-widest opacity-60">Sub-Ledger Route</span>
+                                    </div>
+
+                                    <div className="flex bg-[var(--surface-deep)]/50 p-1.5 rounded-2xl border border-[var(--border-glass)] ring-1 ring-[var(--border-subtle)] overflow-x-auto no-scrollbar gap-2">
+                                        {selectedWallet.computedChannels.map((ch: any) => {
+                                            const isDisabled = ch.balance <= 0;
+                                            const isSelected = selectedChannel === ch.type;
+                                            return (
+                                                <button
+                                                    key={ch.type}
+                                                    type="button"
+                                                    disabled={isDisabled}
+                                                    onClick={() => !isDisabled && setSelectedChannel(ch.type)}
+                                                    className={`flex-none py-3 px-4 min-w-[80px] rounded-xl transition-all flex flex-col items-center gap-1.5 ${isSelected
+                                                        ? 'bg-[var(--surface-overlay)] text-amber-500 shadow-lg shadow-amber-500/10 border border-amber-500/30'
+                                                        : isDisabled
+                                                            ? 'opacity-30 cursor-not-allowed grayscale text-[var(--text-muted)] border border-transparent'
+                                                            : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--surface-card)] border border-transparent'
+                                                        }`}
+                                                >
+                                                    <span className="text-[9px] font-black uppercase tracking-widest">{ch.type}</span>
+                                                    <span className={`text-[10px] font-bold ${isSelected ? 'text-amber-500' : 'text-[var(--text-main)]'}`}>
+                                                        {currency}{ch.balance.toLocaleString()}
+                                                    </span>
+                                                    {isDisabled && <span className="text-[6px] font-black text-rose-500 uppercase tracking-widest leading-none">Low Funds</span>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Impact Preview */}
                             <div className="bg-[var(--surface-deep)]/30 p-5 rounded-[28px] border border-[var(--border-glass)] relative overflow-hidden group">
@@ -805,11 +1009,24 @@ const CommitmentDetailsModal: React.FC<{
                             <button
                                 disabled={isSettling}
                                 onClick={() => {
+                                    // STRICT LIQUIDITY CHECK
+                                    // Ensure the selected channel has enough funds before settling
+                                    const wallet = wallets.find(w => w.id === selectedWalletId);
+                                    if (wallet) {
+                                        // Use Principal Component of the balance
+                                        const channelBalance = wallet.channelBalances[selectedChannel] || 0;
+                                        if (commitment.amount > channelBalance) {
+                                            showFeedback(`Insufficient liquidity in ${selectedChannel}. Available: ${currency}${channelBalance.toLocaleString()}`, 'error');
+                                            return;
+                                        }
+                                    }
+
                                     setIsSettling(true);
                                     onSettle(commitment.id, selectedWalletId, selectedChannel, keepRecurring);
                                     setTimeout(() => {
                                         setIsSettling(false);
                                         onClose();
+                                        showFeedback('Commitment settled successfully.', 'success');
                                     }, 1000);
                                 }}
                                 className="w-full bg-blue-600 hover:bg-blue-500 text-white p-5 rounded-[24px] font-black uppercase tracking-[0.2em] text-[10px] shadow-2xl shadow-blue-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 relative group overflow-hidden"

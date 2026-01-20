@@ -35,11 +35,31 @@ interface Props {
 type Period = 'WEEK' | 'MONTH' | 'YEAR' | 'ALL';
 
 const WalletDetail: React.FC<Props> = ({ wallet, onClose }) => {
-  const { transactions, categories, getCurrencySymbol, setActiveTab, setSelectedWalletId, deleteTransaction } = useFinance();
+  const { transactions, categories, getCurrencySymbol, setActiveTab, setSelectedWalletId, deleteTransaction, wallets } = useFinance();
   const [period, setPeriod] = useState<Period>('MONTH');
   const [viewMode, setViewMode] = useState<'HISTORY' | 'CATEGORIES'>('HISTORY');
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [showPrincipalOnly, setShowPrincipalOnly] = useState(false);
+
+  // Determine which data to show based on toggle
+  const displayBalance = showPrincipalOnly ? wallet.principalBalance : wallet.aggregateBalance;
+  const displayChannels = showPrincipalOnly ? wallet.computedChannels : (wallet.aggregateChannels?.length > 0 ? wallet.aggregateChannels : wallet.computedChannels);
+  const hasSubWallets = wallet.aggregateBalance !== wallet.principalBalance;
+
+  // PRE-CALCULATE VISIBLE IDs
+  const visibleWalletIds = useMemo(() => {
+    const ids = new Set<string>();
+    ids.add(wallet.id);
+
+    // Only include children if NOT in "Principal Only" mode
+    if (!showPrincipalOnly) {
+      wallets.forEach(w => {
+        if (w.parentWalletId === wallet.id) ids.add(w.id);
+      });
+    }
+    return ids;
+  }, [wallet.id, wallets, showPrincipalOnly]);
 
   const walletTransactions = useMemo(() => {
     const now = new Date();
@@ -50,12 +70,13 @@ const WalletDetail: React.FC<Props> = ({ wallet, onClose }) => {
     else if (period === 'YEAR') interval = { start: startOfYear(now), end: endOfYear(now) };
 
     return transactions.filter(t => {
-      const isCorrectWallet = t.walletId === wallet.id;
-      if (!isCorrectWallet) return false;
+      // DYNAMIC VIEW LOGIC: Show Primary + Children
+      if (!visibleWalletIds.has(t.walletId)) return false;
+
       if (!interval) return true;
       return isWithinInterval(new Date(t.date), interval);
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, wallet.id, period]);
+  }, [transactions, visibleWalletIds, period]);
 
   const categoryBreakdown = useMemo(() => {
     const breakdown: Record<string, { amount: number; count: number; category: any }> = {};
@@ -110,8 +131,20 @@ const WalletDetail: React.FC<Props> = ({ wallet, onClose }) => {
         {/* Balance Card */}
         <GlassCard className="bg-[var(--surface-deep)] border-[var(--border-glass)] p-6 relative overflow-hidden transition-colors">
           <div className="absolute top-0 right-0 w-48 h-48 blur-[80px] -z-10 opacity-30" style={{ backgroundColor: wallet.color }} />
-          <p className="text-[var(--text-muted)] text-sm font-medium transition-colors">Available Balance</p>
-          <h1 className="text-4xl font-black tracking-tighter mt-1 text-[var(--text-main)] transition-colors">{getCurrencySymbol(wallet.currency)}{wallet.currentBalance.toLocaleString()}</h1>
+          <div className="flex justify-between items-start">
+            <p className="text-[var(--text-muted)] text-sm font-medium transition-colors">
+              {showPrincipalOnly ? 'Principal Balance (Own Funds)' : 'Total Aggregated Balance'}
+            </p>
+            {hasSubWallets && (
+              <button
+                onClick={() => setShowPrincipalOnly(!showPrincipalOnly)}
+                className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg border transition-all ${showPrincipalOnly ? 'bg-[var(--text-main)] text-[var(--bg-color)] border-transparent' : 'bg-transparent text-[var(--text-muted)] border-[var(--border-glass)]'}`}
+              >
+                {showPrincipalOnly ? 'Show All' : 'Show Principal'}
+              </button>
+            )}
+          </div>
+          <h1 className="text-4xl font-black tracking-tighter mt-1 text-[var(--text-main)] transition-colors">{getCurrencySymbol(wallet.currency)}{displayBalance.toLocaleString()}</h1>
 
           <div className="mt-8 grid grid-cols-2 gap-4">
             <div className="bg-[var(--surface-glass)] p-4 rounded-2xl border border-[var(--border-glass)] transition-colors">
@@ -138,7 +171,7 @@ const WalletDetail: React.FC<Props> = ({ wallet, onClose }) => {
             <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)]">Linked Channels</h3>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {wallet.computedChannels.map(ch => (
+            {displayChannels.map(ch => (
               <div key={ch.type} className="bg-[var(--surface-deep)] border border-[var(--border-glass)] p-4 rounded-2xl flex flex-col gap-2 transition-colors">
                 <div className="flex items-center justify-between">
                   <span className="text-[var(--text-muted)]">{getChannelIcon(ch.type)}</span>

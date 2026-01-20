@@ -1,4 +1,5 @@
 import React from 'react';
+import { useFeedback } from '../store/FeedbackContext';
 import { Transaction, MasterCategoryType } from '../types';
 import { useFinance } from '../store/FinanceContext';
 import { GlassCard } from './ui/GlassCard';
@@ -32,6 +33,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     onDelete
 }) => {
     const { categories, wallets, getCurrencySymbol, setActiveTab, setSelectedWalletId } = useFinance();
+    const { showFeedback } = useFeedback();
 
     if (!isOpen || !transaction) return null;
 
@@ -200,7 +202,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                             className="py-4 rounded-2xl bg-[var(--surface-deep)] border border-[var(--border-glass)] text-[var(--text-main)] font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
                             onClick={() => {
                                 // Future: Share receipt feature
-                                alert('Receipt sharing coming soon!');
+                                showFeedback('Receipt sharing coming soon!', 'info');
                             }}
                         >
                             <Share2 size={18} />
@@ -211,6 +213,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                             onClick={() => {
                                 onDelete(transaction.id);
                                 onClose();
+                                showFeedback('Transaction deleted.', 'success');
                             }}
                         >
                             <Trash2 size={18} />

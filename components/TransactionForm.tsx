@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useFinance } from '../store/FinanceContext';
+import { useFeedback } from '../store/FeedbackContext';
 import { MasterCategoryType, ChannelType, Category, Wallet, ChannelTypeConfig } from '../types';
 import {
   X,
@@ -29,23 +30,24 @@ interface Props {
 }
 
 const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
-  const { wallets, categories, addTransaction, getCurrencySymbol, channelTypes } = useFinance();
+  const { walletsWithBalances, categories, addTransaction, getCurrencySymbol, channelTypes, formatCurrency } = useFinance();
+  const { showFeedback } = useFeedback();
   const [type, setType] = useState<MasterCategoryType>(MasterCategoryType.EXPENSE);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [searchCat, setSearchCat] = useState('');
 
-  const [walletId, setWalletId] = useState(initialWalletId || wallets.find(w => w.isPrimary)?.id || wallets[0]?.id || '');
+  const [walletId, setWalletId] = useState(initialWalletId || walletsWithBalances.find(w => w.isPrimary)?.id || walletsWithBalances[0]?.id || '');
   const [channelType, setChannelType] = useState<ChannelType>('CASH');
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [showCalculator, setShowCalculator] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(true);
   const [transactionDate, setTransactionDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Removed calcExpr state to prevent logic desync. "amount" is the single source of truth.
 
-  const [toWalletId, setToWalletId] = useState(wallets.find(w => w.id !== walletId)?.id || wallets[0]?.id || '');
+  const [toWalletId, setToWalletId] = useState(walletsWithBalances.find(w => w.id !== walletId)?.id || walletsWithBalances[0]?.id || '');
   const [toChannel, setToChannel] = useState<ChannelType>('BANK');
 
   const [categoryId, setCategoryId] = useState('');
@@ -55,6 +57,28 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
   const calcInputRef = useRef<HTMLInputElement>(null);
 
   const isTransfer = type === MasterCategoryType.TRANSFER;
+  const isIncome = type === MasterCategoryType.INCOME;
+
+  // Auto-switch channel if current one is disabled for selected wallet
+  useEffect(() => {
+    if (isIncome) return; // No restrictions for income
+    const wallet = walletsWithBalances.find(w => w.id === walletId);
+    if (!wallet) return;
+
+    // RESTRICTION: Use Principal Balance (Correct Ownership) instead of Aggregate Balance
+    // Filter computedChannels based on Principal channel balances
+    const principalChannels = Object.entries(wallet.channelBalances).map(([type, balance]) => ({ type, balance }));
+
+    const currentChannelDisabled = principalChannels.some(cc => cc.type === channelType && cc.balance <= 0);
+
+    // Check if channel even exists in principal map
+    const channelExists = principalChannels.some(cc => cc.type === channelType);
+
+    if (currentChannelDisabled || !channelExists) {
+      const firstAvailable = principalChannels.find(cc => cc.balance > 0);
+      if (firstAvailable) setChannelType(firstAvailable.type as ChannelType);
+    }
+  }, [walletId, type, walletsWithBalances, channelType, isIncome]);
 
   useEffect(() => {
     const checkDesktop = () => setIsDesktop(window.innerWidth > 640);
@@ -119,7 +143,7 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     let finalAmount = amount;
     if (/[+\-*/]/.test(amount)) {
@@ -127,26 +151,70 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
       if (evaluated) finalAmount = evaluated;
     }
 
-    if (!finalAmount || parseFloat(finalAmount) <= 0) return;
-    if (!isTransfer && !categoryId) {
-      alert('Please select a taxonomy segment');
+    // Dynamic Validation Logic
+    const missingFields: string[] = [];
+
+    if (!finalAmount || parseFloat(finalAmount) <= 0) {
+      showFeedback('Please enter a valid amount.', 'error');
       return;
     }
 
-    addTransaction({
-      amount: parseFloat(finalAmount),
-      date: transactionDate.toISOString(),
-      walletId,
-      channelType: channelType,
-      categoryId: isTransfer ? 'internal-transfer' : categoryId,
-      note,
-      type,
-      isSplit: false,
-      splits: [],
-      toWalletId: isTransfer ? toWalletId : undefined,
-      toChannelType: isTransfer ? toChannel : undefined
-    });
+    if (!walletId) missingFields.push('Source Account');
+
+    if (isTransfer) {
+      if (!toWalletId) missingFields.push('Destination Account');
+      if (walletId && toWalletId && walletId === toWalletId) {
+        showFeedback('Source and destination accounts cannot be the same.', 'error');
+        return;
+      }
+    } else {
+      if (!categoryId) missingFields.push('System Taxonomy');
+    }
+
+    // STRICT BALANCE CHECK (For Expenses & Transfers)
+    if (type === MasterCategoryType.EXPENSE || type === MasterCategoryType.TRANSFER) {
+      const sourceWallet = walletsWithBalances.find(w => w.id === walletId);
+      if (sourceWallet) {
+        // Use Principal Channel Balance Only
+        const channelBalance = sourceWallet.channelBalances[channelType] || 0;
+        if (parseFloat(finalAmount) > channelBalance) {
+          showFeedback(`Insufficient funds in ${channelType}. Available: ${formatCurrency(channelBalance, sourceWallet.currency)}`, 'error');
+          return;
+        }
+      }
+    }
+
+    if (missingFields.length > 0) {
+      const message = `Please select ${missingFields.join(' and ')}.`;
+      console.log('Validation Error:', message);
+      showFeedback(message, 'error', { persistent: false, position: 'center' });
+      return;
+    }
+
+    // Optimistic UI: Close modal immediately
     onClose();
+    showFeedback(`${isTransfer ? 'Transfer' : type} recorded!`, 'success', { persistent: true, position: 'center' });
+
+    try {
+      // Execute in background
+      await addTransaction({
+        amount: parseFloat(finalAmount),
+        date: transactionDate.toISOString(),
+        walletId,
+        channelType: channelType,
+        categoryId: isTransfer ? 'internal-transfer' : categoryId,
+        note,
+        type,
+        isSplit: false,
+        splits: [],
+        toWalletId: isTransfer ? toWalletId : undefined,
+        toChannelType: isTransfer ? toChannel : undefined
+      });
+    } catch (err) {
+      console.error("Transaction Error:", err);
+      // Fallback feedback if persistence fails
+      showFeedback('Failed to save transaction to database.', 'error');
+    }
   };
 
   // Pure logic helper for evaluation using 'amount' state only
@@ -197,7 +265,7 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
               <div className="absolute inset-x-0 -inset-y-12 bg-gradient-to-r from-cyan-500/10 via-blue-600/10 to-purple-600/10 blur-[60px] animate-pulse pointer-events-none" />
 
               <span className="text-3xl font-black bg-gradient-to-br from-cyan-400 to-blue-600 bg-clip-text text-transparent mt-1 transition-all duration-500 font-mono drop-shadow-sm">
-                {getCurrencySymbol(wallets.find(w => w.id === walletId)?.currency)}
+                {getCurrencySymbol(walletsWithBalances.find(w => w.id === walletId)?.currency)}
               </span>
               <div className="flex flex-col items-center flex-1 relative group">
                 <div className="absolute inset-x-0 -bottom-2 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/80 to-transparent scale-x-0 group-focus-within:scale-x-100 transition-transform duration-1000" />
@@ -266,16 +334,19 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
 
             {/* Inline Expandable Premium Glass Keypad */}
             {/* Redesigned to be "Glassy, Transparent, Gradient" */}
-            <div className={`overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${showCalculator ? 'max-h-[600px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'}`}>
-              <div className="relative overflow-hidden rounded-[40px] p-1.5 shadow-[0_30px_60px_rgba(0,0,0,0.4)] transition-all">
-                {/* Master Glass Board Background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a]/95 via-black/95 to-[#1a1a1a]/95 backdrop-blur-[50px] border border-white/10 rounded-[40px] z-0" />
-                <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent mix-blend-overlay z-0 pointer-events-none" />
+            {/* Inline Expandable Premium Glass Keypad - Holographic Redesign */}
+            <div className={`overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${showCalculator ? 'max-h-[600px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0 pt-0'}`}>
+              <div className="relative overflow-hidden rounded-[32px] p-2 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] transition-all transform perspective-1000">
+                {/* Holographic Container Depth Layers */}
+                <div className="absolute inset-0 bg-[#0c0c0e]/90 backdrop-blur-[60px] rounded-[32px] z-0" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-white/5 via-transparent to-white/5 z-0 pointer-events-none mix-blend-overlay" />
+                <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
+                <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent z-10" />
 
-                {/* Advanced Grid Overlay */}
-                <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:16px_16px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none z-0" />
+                {/* Animated Grid Pattern */}
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_0%,black,transparent)] z-0 pointer-events-none" />
 
-                <div className="grid grid-cols-4 gap-2 relative z-10 p-4">
+                <div className="grid grid-cols-4 gap-3 relative z-10 p-4">
                   {[
                     { label: 'C', key: 'C', type: 'danger' },
                     { label: '÷', key: '/', type: 'operator' },
@@ -310,39 +381,44 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                         }
                       }}
                       className={`
-                        h-16 rounded-[24px] font-black text-xl transition-all active:scale-95 relative overflow-hidden group/btn font-mono touch-manipulation select-none
+                        h-16 rounded-[20px] font-black text-xl transition-all relative overflow-hidden group/btn font-mono touch-manipulation select-none
+                        active:scale-[0.92] active:brightness-125
                         ${btn.span === 2 ? 'col-span-2' : ''}
                         
-                        /* Base Glass Style */
-                        backdrop-blur-md shadow-lg border
+                        /* Glass Button Base */
+                        backdrop-blur-xl border border-white/5
+                        shadow-[0_4px_12px_-2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)]
                         
                         ${btn.type === 'operator'
-                          ? 'bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-200/20 text-indigo-300 shadow-[0_4px_16px_rgba(99,102,241,0.1)] hover:bg-white/10 hover:border-white/30 hover:text-white'
+                          ? 'bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 hover:border-indigo-400/30'
                           : btn.type === 'danger'
-                            ? 'bg-gradient-to-br from-rose-500/10 to-red-500/10 border-rose-200/20 text-rose-300 shadow-[0_4px_16px_rgba(244,63,94,0.1)] hover:bg-red-500/20 hover:border-red-500/40 hover:text-white'
+                            ? 'bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:border-rose-400/30'
                             : btn.type === 'action'
-                              ? 'bg-gradient-to-tr from-blue-600 to-violet-600 text-white border-white/20 shadow-[0_8px_30px_rgba(79,70,229,0.4)] hover:shadow-[0_12px_40px_rgba(79,70,229,0.6)] hover:brightness-110'
+                              ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-[0_8px_20px_-4px_rgba(79,70,229,0.5)] border-t-white/20'
                               : btn.type === 'tool'
-                                ? 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:border-white/20 hover:text-white'
-                                : 'bg-gradient-to-br from-white/5 to-white/0 border-white/10 text-white hover:bg-white/10 hover:border-white/25 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]'
+                                ? 'bg-white/5 text-white/40 hover:text-white hover:bg-white/10'
+                                : 'bg-[#1a1a1c]/80 text-white hover:bg-[#252528] active:bg-[#2a2a2d]'
                         }
                       `}
                     >
-                      {/* Shine Effect */}
-                      <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      {/* Internal Glow for depth */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity" />
 
-                      {/* Ripple Effect */}
-                      <div className="absolute inset-0 bg-white/20 scale-0 group-active/btn:scale-[2.0] rounded-full transition-transform duration-300" />
-
-                      <span className="relative z-10 drop-shadow-md">{btn.label}</span>
+                      {/* Text Glow for Operators */}
+                      <span className={`relative z-10 drop-shadow-sm ${btn.type === 'action' ? 'tracking-widest text-sm' : ''}`}>
+                        {btn.label}
+                      </span>
                     </button>
                   ))}
                 </div>
 
-                {/* Footer Signature */}
-                <div className="pb-4 pt-1 flex items-center justify-between relative z-10 opacity-40 pointer-events-none px-8">
-                  <span className="text-[8px] font-mono tracking-[0.3em] font-black text-white/60">FISCAL AI</span>
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_#3B82F6]" />
+                {/* Cyber Footer */}
+                <div className="pb-3 pt-1 flex items-center justify-between relative z-10 px-6 opacity-30 pointer-events-none">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1 h-1 bg-white rounded-full animate-pulse" />
+                    <span className="text-[7px] font-mono tracking-[0.3em] font-black text-white">READY</span>
+                  </div>
+                  <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-white to-transparent opacity-50" />
                 </div>
               </div>
             </div>
@@ -353,8 +429,19 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-4">
                   <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] px-1 transition-colors">Exit Point</p>
-                  <WalletPicker wallets={wallets} selectedId={walletId} onSelect={setWalletId} />
-                  <ChannelPicker selected={channelType} onSelect={setChannelType} options={channelTypes} />
+                  <WalletPicker wallets={walletsWithBalances} selectedId={walletId} onSelect={setWalletId} formatCurrency={formatCurrency} />
+                  <ChannelPicker
+                    selected={channelType}
+                    onSelect={setChannelType}
+                    options={(() => {
+                      const wallet = walletsWithBalances.find(w => w.id === walletId);
+                      return channelTypes.filter(ct => (wallet?.computedChannels || []).some(cc => cc.type === ct.id));
+                    })()}
+                    disabledChannels={(() => {
+                      const wallet = walletsWithBalances.find(w => w.id === walletId);
+                      return (wallet?.computedChannels || []).filter(cc => cc.balance <= 0).map(cc => cc.type);
+                    })()}
+                  />
                 </div>
 
                 <div className="flex justify-center py-4">
@@ -365,8 +452,15 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
 
                 <div className="space-y-4">
                   <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] px-1">Entry Point</p>
-                  <WalletPicker wallets={wallets} selectedId={toWalletId} onSelect={setToWalletId} activeColor="#3B82F6" />
-                  <ChannelPicker selected={toChannel} onSelect={setToChannel} options={channelTypes} />
+                  <WalletPicker wallets={walletsWithBalances} selectedId={toWalletId} onSelect={setToWalletId} activeColor="#3B82F6" formatCurrency={formatCurrency} />
+                  <ChannelPicker
+                    selected={toChannel}
+                    onSelect={setToChannel}
+                    options={(() => {
+                      const wallet = walletsWithBalances.find(w => w.id === toWalletId);
+                      return channelTypes.filter(ct => (wallet?.computedChannels || []).some(cc => cc.type === ct.id));
+                    })()}
+                  />
                 </div>
               </div>
             </div>
@@ -385,21 +479,21 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
                 <button
                   type="button"
                   onClick={() => setShowCatPicker(true)}
-                  className="w-full group relative flex items-center gap-4 p-5 rounded-[32px] bg-[var(--surface-deep)] border border-[var(--border-glass)] hover:border-blue-500/50 hover:bg-[var(--surface-card)] transition-all duration-500"
+                  className="w-full group relative flex items-center gap-3 p-3 rounded-[24px] bg-[var(--surface-deep)] border border-[var(--border-glass)] hover:border-blue-500/50 hover:bg-[var(--surface-card)] transition-all duration-500"
                 >
-                  <div className="w-14 h-14 rounded-[20px] bg-[var(--input-bg)] flex items-center justify-center border border-[var(--border-glass)] shadow-inner group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 text-blue-500">
-                    {categoryId ? ICON_MAP[categories.find(c => c.id === categoryId)?.icon || 'Tag'] : <Layers size={22} />}
+                  <div className="w-11 h-11 rounded-[16px] bg-[var(--input-bg)] flex items-center justify-center border border-[var(--border-glass)] shadow-inner group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 text-blue-500">
+                    {categoryId ? ICON_MAP[categories.find(c => c.id === categoryId)?.icon || 'Tag'] : <Layers size={20} />}
                   </div>
 
                   <div className="flex-1 text-left">
-                    <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1 transition-colors">Active Segment</p>
-                    <h4 className="text-base font-black text-[var(--text-main)] tracking-tight transition-colors">
+                    <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-0.5 transition-colors">Active Segment</p>
+                    <h4 className="text-sm font-black text-[var(--text-main)] tracking-tight transition-colors">
                       {categoryId ? categories.find(c => c.id === categoryId)?.name : 'Select Taxonomy'}
                     </h4>
                   </div>
 
-                  <div className="w-10 h-10 rounded-xl bg-[var(--surface-glass)] flex items-center justify-center text-[var(--text-muted)] group-hover:bg-blue-600 group-hover:text-white transition-all">
-                    <ChevronRight size={18} />
+                  <div className="w-9 h-9 rounded-xl bg-[var(--surface-glass)] flex items-center justify-center text-[var(--text-muted)] group-hover:bg-blue-600 group-hover:text-white transition-all">
+                    <ChevronRight size={16} />
                   </div>
                 </button>
               </div>
@@ -505,12 +599,23 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
               <div className="grid grid-cols-1 gap-8">
                 <div className="space-y-4">
                   <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] px-1 transition-colors">Source Account</p>
-                  <WalletPicker wallets={wallets} selectedId={walletId} onSelect={setWalletId} />
+                  <WalletPicker wallets={walletsWithBalances} selectedId={walletId} onSelect={setWalletId} formatCurrency={formatCurrency} />
                 </div>
 
                 <div className="space-y-4">
                   <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] px-1 transition-colors">Settlement Method</p>
-                  <ChannelPicker selected={channelType} onSelect={setChannelType} options={channelTypes} />
+                  <ChannelPicker
+                    selected={channelType}
+                    onSelect={setChannelType}
+                    options={(() => {
+                      const wallet = walletsWithBalances.find(w => w.id === walletId);
+                      return channelTypes.filter(ct => (wallet?.computedChannels || []).some(cc => cc.type === ct.id));
+                    })()}
+                    disabledChannels={type !== MasterCategoryType.INCOME ? (() => {
+                      const wallet = walletsWithBalances.find(w => w.id === walletId);
+                      return (wallet?.computedChannels || []).filter(cc => cc.balance <= 0).map(cc => cc.type);
+                    })() : []}
+                  />
                 </div>
               </div>
 
@@ -595,41 +700,131 @@ const TransactionForm: React.FC<Props> = ({ onClose, initialWalletId }) => {
 
 // Internal components for clean structure
 
-const WalletPicker: React.FC<{ wallets: Wallet[], selectedId: string, onSelect: (id: string) => void, activeColor?: string }> = ({ wallets, selectedId, onSelect, activeColor = '#3B82F6' }) => (
-  <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-    {wallets.map(w => (
-      <button
-        key={w.id}
-        type="button"
-        onClick={() => onSelect(w.id)}
-        className={`flex items-center gap-2.5 px-3 py-2.5 min-w-[130px] rounded-2xl border transition-all duration-300 ${selectedId === w.id ? 'bg-[var(--surface-glass)] border-[var(--border-glass)]' : 'bg-[var(--surface-deep)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-glass)]'}`}
-        style={{ borderColor: selectedId === w.id ? w.color : undefined }}
-      >
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[var(--bg-color)] shadow-inner transition-colors" style={{ color: w.color }}>
-          {ICON_MAP[w.icon] || <WalletIcon size={16} />}
-        </div>
-        <div className="text-left">
-          <p className="text-[11px] font-black uppercase tracking-tight whitespace-nowrap text-[var(--text-main)] transition-colors">{w.name}</p>
-          <p className="text-[8px] font-black text-[var(--text-muted)] uppercase tracking-widest transition-colors">{w.currency}</p>
-        </div>
-        {selectedId === w.id && <Check size={14} className="ml-auto" style={{ color: w.color }} />}
-      </button>
-    ))}
-  </div>
-);
+const WalletPicker: React.FC<{ wallets: any[], selectedId: string, onSelect: (id: string) => void, activeColor?: string, formatCurrency: any }> = ({ wallets, selectedId, onSelect, activeColor = '#3B82F6', formatCurrency }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedWallet = wallets.find(w => w.id === selectedId) || wallets[0];
 
-const ChannelPicker: React.FC<{ selected: ChannelType, onSelect: (ch: ChannelType) => void, options: ChannelTypeConfig[] }> = ({ selected, onSelect, options }) => (
-  <div className="flex bg-[var(--input-bg)] p-1 rounded-2xl border border-[var(--border-glass)] ring-1 ring-[var(--border-subtle)] overflow-x-auto no-scrollbar transition-colors">
-    {options.map(ch => (
+  return (
+    <div className="relative z-20">
+      {/* Trigger Button */}
       <button
-        key={ch.id}
         type="button"
-        onClick={() => onSelect(ch.id)}
-        className={`flex-1 py-2 px-3 min-w-[70px] text-[8px] font-black uppercase tracking-[0.1em] rounded-xl transition-all ${selected === ch.id ? 'bg-[var(--surface-deep)] text-blue-400 shadow-2xl border border-[var(--border-glass)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full group relative flex items-center gap-3 p-2 pr-4 rounded-[24px] bg-[var(--surface-deep)] border border-[var(--border-glass)] hover:border-blue-500/50 hover:bg-[var(--surface-card)] transition-all duration-300 active:scale-[0.98]"
+        style={{ borderColor: isOpen ? selectedWallet?.color || activeColor : undefined }}
       >
-        {ch.name}
+        <div className="w-12 h-12 rounded-[18px] bg-[var(--input-bg)] flex items-center justify-center border border-[var(--border-glass)] shadow-inner transition-colors" style={{ color: selectedWallet?.color || activeColor }}>
+          {ICON_MAP[selectedWallet?.icon || 'Wallet'] || <WalletIcon size={20} />}
+        </div>
+
+        <div className="flex-1 text-left min-w-0">
+          <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-0.5 transition-colors">Source Account</p>
+          <h4 className="text-sm font-black text-[var(--text-main)] tracking-tight truncate transition-colors">
+            {selectedWallet?.name || 'Select Wallet'}
+          </h4>
+        </div>
+
+        <div className={`w-8 h-8 rounded-full bg-[var(--surface-glass)] flex items-center justify-center text-[var(--text-muted)] transition-all duration-300 ${isOpen ? 'rotate-180 bg-blue-500/10 text-blue-500' : ''}`}>
+          <ChevronRight size={16} className="rotate-90" />
+        </div>
       </button>
-    ))}
+
+      {/* Dropdown Menu */}
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-2 z-30 bg-[var(--surface-overlay)] border border-[var(--border-glass)] rounded-[24px] shadow-[0_20px_60px_-10px_rgba(0,0,0,0.5)] backdrop-blur-3xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 flex flex-col max-h-[300px]">
+            <div className="overflow-y-auto no-scrollbar pt-2">
+              {wallets.map((w, index) => (
+                <React.Fragment key={w.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(w.id);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-3 p-3 transition-all duration-200 group/item relative ${selectedId === w.id ? 'bg-blue-600/10' : 'hover:bg-[var(--surface-card)]'}`}
+                  >
+                    {/* Active Indicator Stripe */}
+                    {selectedId === w.id && <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-blue-500" />}
+
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shrink-0 ${selectedId === w.id ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' : 'bg-[var(--input-bg)] text-[var(--text-muted)] group-hover/item:text-[var(--text-main)] group-hover/item:bg-white/5'}`}>
+                      {ICON_MAP[w.icon] || <WalletIcon size={18} />}
+                    </div>
+
+                    <div className="flex-1 text-left min-w-0 py-0.5">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-xs font-bold leading-tight truncate ${selectedId === w.id ? 'text-blue-400' : 'text-[var(--text-main)]'}`}>{w.name}</span>
+
+                        {/* Status Badges */}
+                        <div className="flex items-center gap-1.5">
+                          {w.isPrimary && (
+                            <span className="text-[7px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded-md border border-amber-500/20">Primary</span>
+                          )}
+                          {w.parentWalletId ? (
+                            <span className="text-[7px] font-black uppercase tracking-wider bg-purple-500/10 text-purple-500 px-1.5 py-0.5 rounded-md border border-purple-500/20">Linked</span>
+                          ) : !w.isPrimary && (
+                            <span className="text-[7px] font-black uppercase tracking-wider bg-[var(--surface-glass)] text-[var(--text-muted)] px-1.5 py-0.5 rounded-md border border-[var(--border-subtle)]">Individual</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${selectedId === w.id ? 'text-blue-300/80' : 'text-[var(--text-muted)]'}`}>{w.currency}</span>
+                        <p className={`text-2xl font-bold tracking-tighter transition-all duration-500 ${w.usesPrimaryIncome ? 'text-purple-300' : 'text-[var(--text-main)]'}`}>
+                          {formatCurrency(w.aggregateBalance, w.currency)}
+                        </p>
+                        {/* Principal Breakdown for Parents */}
+                        {(w.aggregateBalance !== w.principalBalance) && (
+                          <p className="text-[10px] text-[var(--text-muted)] font-medium italic transition-colors text-right mt-0.5">
+                            Principal: <span className="text-[var(--text-main)] opacity-70">{formatCurrency(w.principalBalance, w.currency)}</span>
+                          </p>
+                        )}
+                        {w.usesPrimaryIncome && <p className="text-[10px] text-[var(--text-muted)] font-medium italic transition-colors">Virtual View</p>}
+                      </div>
+                    </div>
+                  </button>
+                  {/* Silent Divider Line */}
+                  {index < wallets.length - 1 && (
+                    <div className="mx-4 h-[1px] bg-gradient-to-r from-transparent via-[var(--border-subtle)] to-transparent opacity-50" />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const ChannelPicker: React.FC<{
+  selected: ChannelType,
+  onSelect: (ch: ChannelType) => void,
+  options: ChannelTypeConfig[],
+  disabledChannels?: ChannelType[]
+}> = ({ selected, onSelect, options, disabledChannels = [] }) => (
+  <div className="flex bg-[var(--input-bg)] p-1 rounded-2xl border border-[var(--border-glass)] ring-1 ring-[var(--border-subtle)] overflow-x-auto no-scrollbar transition-colors">
+    {options.map(ch => {
+      const isDisabled = disabledChannels.includes(ch.id);
+      return (
+        <button
+          key={ch.id}
+          type="button"
+          disabled={isDisabled}
+          onClick={() => !isDisabled && onSelect(ch.id)}
+          className={`flex-1 py-2 px-3 min-w-[70px] text-[8px] font-black uppercase tracking-[0.1em] rounded-xl transition-all ${selected === ch.id
+            ? 'bg-[var(--surface-deep)] text-blue-400 shadow-2xl border border-[var(--border-glass)]'
+            : isDisabled
+              ? 'opacity-30 cursor-not-allowed grayscale text-[var(--text-muted)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+            }`}
+        >
+          {ch.name}
+          {isDisabled && <span className="block text-[6px] opacity-40 leading-none mt-0.5">No Balance</span>}
+        </button>
+      );
+    })}
   </div>
 );
 

@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Transaction, Wallet, Category } from "../types";
 import { memoryService } from "./memory";
 import { databaseKernel } from "./database";
+import { offlineSyncService } from "./offlineSync";
 import { v4 as uuidv4 } from 'uuid';
 
 // Use import.meta.env for Vite environment variables
@@ -12,6 +13,16 @@ import { GeminiKeyConfig } from "../types";
 let aiInstances: Record<string, GoogleGenAI> = {};
 let limitedKeys: Set<string> = new Set();
 let activeKeyId: string | null = localStorage.getItem('finos_preferred_key_id');
+
+// Hot Reload Listener for Global Sync
+if (typeof window !== 'undefined') {
+  window.addEventListener('FINOS_AI_KEYS_UPDATED', () => {
+    console.log("♻️ [AI-Kernel] Hot Reloading Global Keys Reservoir...");
+    aiInstances = {}; // Clear instances to pick up new keys
+    activeKeyId = localStorage.getItem('finos_preferred_key_id');
+    syncKeysToContext();
+  });
+}
 
 const recentLogs: string[] = [];
 
@@ -53,42 +64,70 @@ const logTokenUsage = (activity: string, response: any, keyId: string = 'unknown
 
     // Persist to DB (Fire & Forget)
     try {
-      const logEntry = {
-        id: uuidv4(),
-        key_id: keyId || 'unknown',
-        activity_type: activity,
-        model: model || 'unknown',
-        input_tokens: promptTokenCount || 0,
-        output_tokens: candidatesTokenCount || 0,
-        total_tokens: totalTokenCount || 0,
-        timestamp: Date.now(),
-        status: 'SUCCESS',
-        error_msg: null
-      };
+      // Fetch current user_id directly from meta_sync to ensure RLS compatibility
+      // databaseKernel.query returns rows array directly: query(table, where)
+      databaseKernel.query('meta_sync', 'id = 1').then(rows => {
+        const userId = rows?.[0]?.last_user_id || 'unknown';
 
-      // Use the kernel execution wrapper which handles connection state
-      databaseKernel.run(`
-            INSERT INTO ai_usage_logs (id, key_id, activity_type, model, input_tokens, output_tokens, total_tokens, timestamp, status, error_msg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        const logEntry = {
+          id: uuidv4(),
+          key_id: keyId || 'unknown',
+          activity_type: activity,
+          model: model || 'unknown',
+          input_tokens: promptTokenCount || 0,
+          output_tokens: candidatesTokenCount || 0,
+          total_tokens: totalTokenCount || 0,
+          timestamp: Date.now(),
+          status: 'SUCCESS',
+          error_msg: null,
+          user_id: userId,
+          updated_at: Date.now() // Critical for Sync
+        };
+
+        // Use the kernel execution wrapper which handles connection state
+        databaseKernel.run(`
+            INSERT INTO ai_usage_logs (id, key_id, activity_type, model, input_tokens, output_tokens, total_tokens, timestamp, status, error_msg, user_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
-        logEntry.id,
-        logEntry.key_id,
-        logEntry.activity_type,
-        logEntry.model,
-        logEntry.input_tokens,
-        logEntry.output_tokens,
-        logEntry.total_tokens,
-        logEntry.timestamp,
-        logEntry.status,
-        null
-      ], false).then(() => {
-        console.log(`✅ [AI-DB] Log saved for Key: ${logEntry.key_id}`);
-        // Dispatch Real-time Event for UI
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('FINOS_AI_USAGE_UPDATE', { detail: logEntry }));
-        }
-      }).catch(e => {
-        console.error("❌ [AI-DB] Insert failed:", e);
+          logEntry.id,
+          logEntry.key_id,
+          logEntry.activity_type,
+          logEntry.model,
+          logEntry.input_tokens,
+          logEntry.output_tokens,
+          logEntry.total_tokens,
+          logEntry.timestamp,
+          logEntry.status,
+          null,
+          logEntry.user_id,
+          logEntry.updated_at
+        ], false).then(() => {
+          console.log(`✅ [AI-DB] Log saved for Key: ${logEntry.key_id} (User: ${logEntry.user_id})`);
+
+          // Queue for Sync Explicitly
+          const syncId = uuidv4();
+          databaseKernel.run(`
+              INSERT INTO sync_queue (id, entity, entity_id, operation, payload, created_at, status)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+          `, [
+            syncId,
+            'ai_usage_logs',
+            logEntry.id,
+            'INSERT',
+            JSON.stringify(logEntry),
+            Date.now(),
+            'pending'
+          ], false)
+            .then(() => offlineSyncService.push()) // Trigger Sync Engine
+            .catch(err => console.error("❌ [AI-DB] Sync Queue failed:", err));
+
+          // Dispatch Real-time Event for UI
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('FINOS_AI_USAGE_UPDATE', { detail: logEntry }));
+          }
+        }).catch(e => {
+          console.error("❌ [AI-DB] Insert failed:", e);
+        });
       });
 
     } catch (e) {
@@ -99,28 +138,22 @@ const logTokenUsage = (activity: string, response: any, keyId: string = 'unknown
 
 export const getRecentLogs = () => [...recentLogs];
 
-const FOUNDATION_KEYS: GeminiKeyConfig[] = [
-  { "id": "f1", "key": "AIzaSyAeYHBfcmEW-OoT9AlWW13amlNruWUOsno", "label": "Global Tier-1", "status": "ACTIVE" },
-  { "id": "f2", "key": "AIzaSyDLI5GGizlL1BH6Yx9bBZgD46Z2aBxHIFc", "label": "Global Tier-2", "status": "ACTIVE" },
-  { "id": "f3", "key": "AIzaSyBV-Q1aZpGukZE_e5aJyrI_nkfDrpoBIgY", "label": "Global Tier-3", "status": "ACTIVE" },
-  { "id": "f4", "key": "AIzaSyDJSJZm2xu6DPkLseucwlMKBohYZYuNqu4", "label": "Global Tier-4", "status": "ACTIVE" },
-  { "id": "f5", "key": "AIzaSyBE4Z-IZEQVv8FSKgOjpisTPmddsb3079Y", "label": "Global Tier-5", "status": "ACTIVE" }
-];
+// FOUNDATION_KEYS removed for security - all keys must come from Supabase
+const FOUNDATION_KEYS: GeminiKeyConfig[] = [];
 
 const getKeys = (): GeminiKeyConfig[] => {
   // 1. Priority: Global Admin Keys (Synced from Super Admin)
   const globalKeysJSON = localStorage.getItem('finos_global_ai_keys');
 
   // 2. Secondary: User's own keys (if allowed/present)
-  const userKeysJSON = localStorage.getItem('finos_gemini_keys');
-
-  let activeKeysJSON = (globalKeysJSON && globalKeysJSON !== '[object Object]') ? globalKeysJSON : userKeysJSON;
+  let activeKeysJSON = (globalKeysJSON && globalKeysJSON !== '[object Object]') ? globalKeysJSON : null;
 
   if (activeKeysJSON && activeKeysJSON !== '[object Object]') {
     try {
-      let keys: GeminiKeyConfig[] = typeof activeKeysJSON === 'string' ? JSON.parse(activeKeysJSON) : activeKeysJSON;
+      const keys: GeminiKeyConfig[] = typeof activeKeysJSON === 'string' ? JSON.parse(activeKeysJSON) : activeKeysJSON;
       if (Array.isArray(keys) && keys.length > 0) {
-        return keys;
+        // Validation: Filter out keys that don't look valid (too short or placeholder)
+        return keys.filter(k => k.key && k.key.length > 10 && k.key !== 'dummy_key');
       }
     } catch (e) {
       console.warn("Failed to parse custom keys, falling back to Foundation.", e);
@@ -193,7 +226,7 @@ const getAiForNextKey = () => {
 
     // Update local storage to reflect this force-unlock
     const updatedKeys = allKeys.map(k => k.id === victim.id ? { ...k, status: 'ACTIVE' as const, limitedAt: undefined } : k);
-    localStorage.setItem('finos_gemini_keys', JSON.stringify(updatedKeys));
+    localStorage.setItem('finos_global_ai_keys', JSON.stringify(updatedKeys));
 
     if (!aiInstances[victim.id]) {
       aiInstances[victim.id] = new GoogleGenAI({ apiKey: victim.key });
@@ -211,7 +244,7 @@ const markKeyLimited = (id: string) => {
   // Update in localStorage as well so Admin UI can show it
   const keys = getKeys();
   const updatedKeys = keys.map(k => k.id === id ? { ...k, status: 'LIMITED' as const, limitedAt: Date.now() } : k);
-  localStorage.setItem('finos_gemini_keys', JSON.stringify(updatedKeys));
+  localStorage.setItem('finos_global_ai_keys', JSON.stringify(updatedKeys));
 
   // Reset after 1 minute (Gemini free tier limit usually resets every minute)
   setTimeout(() => {
@@ -220,7 +253,7 @@ const markKeyLimited = (id: string) => {
     // Revert status in localStorage to ACTIVE
     const currentKeys = getKeys();
     const restoredKeys = currentKeys.map(k => k.id === id ? { ...k, status: 'ACTIVE' as const, limitedAt: undefined } : k);
-    localStorage.setItem('finos_gemini_keys', JSON.stringify(restoredKeys));
+    localStorage.setItem('finos_global_ai_keys', JSON.stringify(restoredKeys));
 
     syncKeysToContext(); // Sync back to ACTIVE state
   }, 60000);
@@ -248,14 +281,8 @@ const extractText = (response: any): string => {
 // Models to try in order. 
 // Reordered: 2.0 Flash is stabilized and has higher initial quotas.
 export const FALLBACK_MODELS = [
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite-preview-02-05", // Latest Lite
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-  "gemini-1.5-pro",
-  "gemini-2.0-pro-exp-02-05", // Precise name for 2.0 Pro
-  "gemini-2.5-flash", // Experimental (limit: 20/day)
-  "gemini-1.0-pro"
+
+  "gemini-2.5-flash" // Experimental (limit: 20/day)
 ];
 
 // Helper to get preferred model (Global priority)

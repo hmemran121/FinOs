@@ -62,7 +62,6 @@ const Wallets: React.FC = () => {
   const confirmDelete = (cascade: boolean) => {
     if (deleteId) {
       deleteWallet(deleteId, cascade);
-      setDeleteId(null);
     }
   };
 
@@ -115,8 +114,13 @@ const Wallets: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className={`text-2xl font-bold tracking-tighter transition-all duration-500 ${wallet.usesPrimaryIncome ? 'text-purple-300' : 'text-[var(--text-main)]'}`}>
-                  {formatCurrency(wallet.currentBalance, wallet.currency)}
+                  {formatCurrency(wallet.aggregateBalance, wallet.currency)}
                 </p>
+                {(wallet.aggregateBalance !== wallet.principalBalance) && (
+                  <p className="text-[10px] text-[var(--text-muted)] font-medium italic transition-colors text-right mt-0.5" title="Directly owned funds">
+                    Principal: <span className="text-[var(--text-main)] opacity-70">{formatCurrency(wallet.principalBalance, wallet.currency)}</span>
+                  </p>
+                )}
                 {wallet.usesPrimaryIncome && <p className="text-[10px] text-[var(--text-muted)] font-medium italic transition-colors">Virtual View</p>}
                 <div className="flex gap-2 justify-end mt-1">
                   <button onClick={(e) => handleEdit(wallet, e)} className="text-[var(--text-muted)] hover:text-blue-500 transition-colors p-1"><Edit3 size={14} /></button>
@@ -139,7 +143,7 @@ const Wallets: React.FC = () => {
                 {wallet.usesPrimaryIncome ? 'Sub-ledger Reference' : 'Channel Balances'}
               </p>
               <div className="grid grid-cols-2 gap-2">
-                {wallet.computedChannels.map(channel => (
+                {(wallet.aggregateChannels?.length > 0 ? wallet.aggregateChannels : wallet.computedChannels).map(channel => (
                   <div key={channel.type} className="bg-[var(--surface-deep)] border border-[var(--border-glass)] p-2 rounded-2xl flex flex-col gap-0.5 transition-colors">
                     <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
                       {getChannelIcon(channel.type)}

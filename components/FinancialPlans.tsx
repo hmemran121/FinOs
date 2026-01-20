@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useFeedback } from '../store/FeedbackContext';
 import { useFinance } from '../store/FinanceContext';
 import { GlassCard } from './ui/GlassCard';
 import { AutocompleteInput } from './ui/AutocompleteInput';
@@ -16,6 +17,18 @@ import DynamicDeleteModal from './modals/DynamicDeleteModal';
 import { ICON_MAP } from '../constants';
 import { FinancialPlan, PlanComponent, PlanSettlement, PlanStatus, PlanType, ComponentType } from '../types';
 import { format } from 'date-fns';
+
+const INTERNATIONAL_UNITS = [
+    { group: 'Quantity', units: ['pcs', 'units', 'sets', 'pairs', 'dozens', 'gross', 'box', 'pack', 'bundle', 'roll', 'cartons', 'pallets'] },
+    { group: 'Mass/Weight', units: ['kg', 'g', 'mg', 'lb', 'oz', 'ton', 'metric ton'] },
+    { group: 'Volume', units: ['L', 'ml', 'm³', 'gal', 'qt', 'pt', 'fl oz', 'cup', 'tsp', 'tbsp'] },
+    { group: 'Length/Distance', units: ['m', 'km', 'cm', 'mm', 'in', 'ft', 'yd', 'mi'] },
+    { group: 'Area', units: ['m²', 'km²', 'ft²', 'ac', 'ha'] },
+    { group: 'Time/Duration', units: ['sec', 'min', 'hr', 'day', 'week', 'month', 'year'] },
+    { group: 'Digital/Data', units: ['B', 'KB', 'MB', 'GB', 'TB'] },
+    { group: 'Energy/Power', units: ['Wh', 'kWh', 'W', 'kW', 'MW', 'hp', 'cal', 'kcal', 'BTU'] },
+    { group: 'Other', units: ['service', 'session', 'trip', 'night', 'person', 'ticket'] }
+];
 
 const FinancialPlans: React.FC = () => {
     const {
@@ -36,6 +49,7 @@ const FinancialPlans: React.FC = () => {
         categories,
         searchPlanSuggestions
     } = useFinance();
+    const { showFeedback } = useFeedback();
 
     const [activeTab, setActiveTabLocal] = useState<'DRAFT' | 'FINALIZED'>('DRAFT');
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -76,6 +90,10 @@ const FinancialPlans: React.FC = () => {
     // Taxonomy Picker State
     const [showCatPicker, setShowCatPicker] = useState(false);
     const [searchCat, setSearchCat] = useState('');
+
+    // Unit Picker State
+    const [showUnitPicker, setShowUnitPicker] = useState(false);
+    const [searchUnit, setSearchUnit] = useState('');
 
     // Deletion Modal State
     const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -177,6 +195,7 @@ const FinancialPlans: React.FC = () => {
         setNewPlanData({ title: '', plan_type: 'CUSTOM' });
         setIsAddingPlan(false);
         setSelectedPlanId(id);
+        showFeedback('Financial plan created successfully.', 'success');
     };
 
     const handleAddComponent = async () => {
@@ -192,11 +211,26 @@ const FinancialPlans: React.FC = () => {
         });
         setNewCompData({ name: '', component_type: 'ABSTRACT', expected_cost: '', category_id: '', quantity: '', unit: '' });
         setIsAddingComponent(false);
+        showFeedback('Component added to plan.', 'success');
     };
 
     const handleAddSettlement = async () => {
         const amountNum = parseFloat(newSettlementData.amount) || 0;
         if (!selectedPlanId || !amountNum) return;
+
+        // STRICT LIQUIDITY CHECK
+        const wallet = walletsWithBalances.find(w => w.id === newSettlementData.wallet_id);
+        if (wallet) {
+            const channel = wallet.channels.find(c => c.id === newSettlementData.channel_id);
+            // Fallback: If channel object missing (shouldn't happen), check map
+            const channelBalance = wallet.channelBalances[channel?.type || ''] || 0;
+
+            if (amountNum > channelBalance) {
+                showFeedback(`Insufficient funds in ${channel?.type}. Available: ${getCurrencySymbol(wallet.currency)}${channelBalance.toLocaleString()}`, 'error');
+                return;
+            }
+        }
+
         await addSettlement({
             plan_id: selectedPlanId,
             channel_id: newSettlementData.channel_id,
@@ -292,6 +326,7 @@ const FinancialPlans: React.FC = () => {
         setGroupingMemberIds([]);
         setGroupTag('');
         setHighlightedComponentId(null);
+        showFeedback('Component cost verified.', 'success');
     };
 
     const handleEditSettlement = (s: PlanSettlement) => {
@@ -504,13 +539,13 @@ const FinancialPlans: React.FC = () => {
                                                     </div>
                                                     <div className="flex flex-col items-end transition-transform duration-500 group-hover:-translate-x-14">
                                                         <div className="flex items-center gap-2">
-                                                            {component.final_cost != null && component.expected_cost > 0 && (
+                                                            {component.final_cost != null && component.expected_cost != null && component.expected_cost > 0 && (
                                                                 <div className={`px-1.5 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-tighter border ${component.final_cost <= component.expected_cost
                                                                     ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
                                                                     : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
                                                                     }`}>
                                                                     {component.final_cost <= component.expected_cost ? '-' : '+'}
-                                                                    {Math.abs(Math.round(((component.final_cost - component.expected_cost) / component.expected_cost) * 100))}%
+                                                                    {Math.abs(Math.round(((component.final_cost - (component.expected_cost || 0)) / (component.expected_cost || 1)) * 100))}%
                                                                 </div>
                                                             )}
                                                             <span className={`font-black tracking-tight transition-colors ${component.final_cost != null ? 'text-emerald-500' : 'text-[var(--text-main)] group-hover:text-blue-500'}`}>
@@ -696,7 +731,12 @@ const FinancialPlans: React.FC = () => {
                     {selectedPlan.status !== 'FINALIZED' && (
                         <div className="mt-4 px-2">
                             <button
-                                onClick={() => allPicked && finalizePlan(selectedPlan.id)}
+                                onClick={() => {
+                                    if (allPicked) {
+                                        finalizePlan(selectedPlan.id);
+                                        showFeedback('Plan finalized and executed!', 'success');
+                                    }
+                                }}
                                 disabled={!allPicked}
                                 className={`w-full py-4 text-white rounded-3xl font-black uppercase tracking-[0.2em] shadow-xl border-t border-white/20 flex items-center justify-center gap-2 transition-all group ${allPicked ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/20 active:scale-95' : 'bg-gray-500/20 text-gray-500 cursor-not-allowed opacity-50'}`}
                             >
@@ -917,13 +957,82 @@ const FinancialPlans: React.FC = () => {
                                                 </div>
                                                 <div className="flex-1">
                                                     <label className="text-[10px] font-black uppercase tracking-widest text-blue-500 mb-2 block">Unit</label>
-                                                    <input
-                                                        value={newCompData.unit}
-                                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewCompData({ ...newCompData, unit: e.target.value })}
-                                                        placeholder="e.g. kg, pcs"
-                                                        className="w-full bg-[var(--surface-deep)] border border-[var(--border-glass)] rounded-2xl p-4 text-[var(--text-main)] font-bold outline-none"
-                                                    />
+                                                    <button
+                                                        onClick={() => setShowUnitPicker(true)}
+                                                        className="w-full bg-[var(--surface-deep)] border border-[var(--border-glass)] rounded-2xl p-4 flex items-center justify-between group hover:border-blue-500/30 transition-all text-left"
+                                                    >
+                                                        {newCompData.unit ? (
+                                                            <span className="font-bold text-[var(--text-main)] uppercase">{newCompData.unit}</span>
+                                                        ) : (
+                                                            <span className="text-[var(--text-muted)] font-bold">Select Unit</span>
+                                                        )}
+                                                        <ChevronRight size={18} className="text-[var(--text-muted)] group-hover:text-blue-500 transition-colors rotate-90" />
+                                                    </button>
                                                 </div>
+
+                                                {/* PREMIUM UNIT PICKER OVERLAY */}
+                                                {showUnitPicker && (
+                                                    <div className="absolute inset-0 z-[1200] bg-[var(--surface-overlay)] flex flex-col animate-in fade-in slide-in-from-bottom-10 duration-500 rounded-[40px] overflow-hidden">
+                                                        <div className="px-8 py-5 flex items-center justify-between border-b border-[var(--border-glass)] bg-[var(--surface-overlay)] backdrop-blur-2xl z-30 shrink-0">
+                                                            <div>
+                                                                <h2 className="text-2xl font-black text-[var(--text-main)] tracking-tighter">Units of Measure</h2>
+                                                                <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mt-1">Inter-System Standards</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => { setShowUnitPicker(false); setSearchUnit(''); }}
+                                                                className="p-4 rounded-2xl bg-[var(--surface-deep)] border border-[var(--border-glass)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all shadow-lg active:scale-95"
+                                                            >
+                                                                <X size={20} />
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="px-8 pb-4 pt-8 bg-[var(--surface-overlay)]/50 backdrop-blur-md z-20 shrink-0">
+                                                            <div className="relative group">
+                                                                <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] group-focus-within:text-blue-500 transition-colors" />
+                                                                <input
+                                                                    placeholder="Search international units..."
+                                                                    className="w-full bg-[var(--input-bg)] border border-[var(--border-glass)] rounded-[24px] py-5 pl-14 pr-6 text-xs font-bold outline-none focus:border-blue-500/50 transition-all placeholder:text-[var(--text-dim)] text-[var(--text-main)] shadow-inner"
+                                                                    value={searchUnit}
+                                                                    onChange={(e) => setSearchUnit(e.target.value)}
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex-1 overflow-y-auto px-8 pb-20 no-scrollbar space-y-6">
+                                                            {INTERNATIONAL_UNITS.map(group => {
+                                                                const filteredUnits = group.units.filter(u => u.toLowerCase().includes(searchUnit.toLowerCase()));
+                                                                if (filteredUnits.length === 0) return null;
+
+                                                                return (
+                                                                    <div key={group.group} className="space-y-3">
+                                                                        <div className="flex items-center gap-3 sticky top-0 bg-[var(--surface-overlay)] py-2 z-10 transition-colors">
+                                                                            <h5 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">{group.group}</h5>
+                                                                            <div className="flex-1 h-[1px] bg-gradient-to-r from-blue-500/20 to-transparent" />
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            {filteredUnits.map(unit => (
+                                                                                <button
+                                                                                    key={unit}
+                                                                                    onClick={() => {
+                                                                                        setNewCompData({ ...newCompData, unit });
+                                                                                        setShowUnitPicker(false);
+                                                                                        setSearchUnit('');
+                                                                                    }}
+                                                                                    className={`p-4 rounded-2xl border transition-all duration-300 flex items-center justify-between group/unit ${newCompData.unit === unit
+                                                                                        ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-500/20'
+                                                                                        : 'bg-[var(--surface-deep)] border-[var(--border-glass)] text-[var(--text-main)] hover:border-blue-500/30'}`}
+                                                                                >
+                                                                                    <span className="text-xs font-black uppercase italic tracking-tighter">{unit}</span>
+                                                                                    {newCompData.unit === unit && <Check size={14} />}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -941,7 +1050,7 @@ const FinancialPlans: React.FC = () => {
                     )}
 
                     {isAddingSettlement && (
-                        <div className="fixed inset-0 w-screen h-screen z-[510] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-300">
+                        <div className="fixed inset-0 w-screen h-screen z-[510] bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                             <GlassCard className={`w-full max-w-lg bg-[var(--surface-overlay)] border-[var(--border-glass)] shadow-2xl relative overflow-hidden transition-all duration-500 ease-in-out ${showWalletPickerSettlement || showChannelPickerSettlement ? 'h-[96vh]' : 'h-auto'}`}>
                                 <div className="flex flex-col gap-6 p-2 h-full">
                                     <div className="flex justify-between items-center">
@@ -983,6 +1092,8 @@ const FinancialPlans: React.FC = () => {
                                             <div className="relative group/input">
                                                 <input
                                                     type="number"
+                                                    readOnly={!isDesktop}
+                                                    inputMode={isDesktop ? "decimal" : "none"}
                                                     value={newSettlementData.amount}
                                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSettlementData({ ...newSettlementData, amount: e.target.value })}
                                                     placeholder="0.00"
@@ -1006,49 +1117,47 @@ const FinancialPlans: React.FC = () => {
                                             </div>
 
                                             {/* Inline Calculator for Settlement */}
-                                            {showCalculator && calcTarget === 'SETTLEMENT' && (
-                                                <div className="animate-in slide-in-from-top-4 duration-500">
-                                                    <div className="relative overflow-hidden rounded-[32px] p-1.5 shadow-[0_30px_60px_rgba(0,0,0,0.4)] transition-all">
-                                                        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a]/95 via-black/95 to-[#1a1a1a]/95 backdrop-blur-[50px] border border-white/10 rounded-[32px] z-0" />
-                                                        <div className="grid grid-cols-4 gap-2 relative z-10 p-3">
-                                                            {[
-                                                                { label: 'C', key: 'C', type: 'danger' },
-                                                                { label: '÷', key: '/', type: 'operator' },
-                                                                { label: '×', key: '*', type: 'operator' },
-                                                                { label: '⌫', key: 'Backspace', type: 'tool' },
-                                                                { label: '7', key: '7' }, { label: '8', key: '8' }, { label: '9', key: '9' }, { label: '-', key: '-', type: 'operator' },
-                                                                { label: '4', key: '4' }, { label: '5', key: '5' }, { label: '6', key: '6' }, { label: '+', key: '+', type: 'operator' },
-                                                                { label: '1', key: '1' }, { label: '2', key: '2' }, { label: '3', key: '3' }, { label: 'EXE', key: 'Enter', type: 'action' },
-                                                                { label: '0', key: '0', span: 2 }, { label: '.', key: '.' },
-                                                            ].map((btn, idx) => (
-                                                                <button
-                                                                    key={idx}
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.preventDefault();
-                                                                        e.stopPropagation();
-                                                                        const currentAmt = newSettlementData.amount || '';
-                                                                        if (btn.key === 'Enter') {
-                                                                            const res = safeEvaluate(currentAmt);
-                                                                            if (res) setNewSettlementData({ ...newSettlementData, amount: res });
-                                                                            setShowCalculator(false);
-                                                                        } else if (btn.key === 'C') {
-                                                                            setNewSettlementData({ ...newSettlementData, amount: '' });
-                                                                        } else if (btn.key === 'Backspace') {
-                                                                            setNewSettlementData({ ...newSettlementData, amount: currentAmt.slice(0, -1) });
-                                                                        } else {
-                                                                            setNewSettlementData({ ...newSettlementData, amount: currentAmt + btn.key });
-                                                                        }
-                                                                    }}
-                                                                    className={`h-12 rounded-2xl font-black text-base transition-all active:scale-95 border ${btn.span === 2 ? 'col-span-2' : ''} ${btn.type === 'action' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-white/5 border-white/10 text-white'}`}
-                                                                >
-                                                                    {btn.label}
-                                                                </button>
-                                                            ))}
-                                                        </div>
+                                            <div className={`overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${showCalculator && calcTarget === 'SETTLEMENT' ? 'max-h-[600px] opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0 pt-0'}`}>
+                                                <div className="relative overflow-hidden rounded-[32px] p-1.5 shadow-[0_30px_60px_rgba(0,0,0,0.4)] transition-all">
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a]/95 via-black/95 to-[#1a1a1a]/95 backdrop-blur-[50px] border border-white/10 rounded-[32px] z-0" />
+                                                    <div className="grid grid-cols-4 gap-2 relative z-10 p-3">
+                                                        {[
+                                                            { label: 'C', key: 'C', type: 'danger' },
+                                                            { label: '÷', key: '/', type: 'operator' },
+                                                            { label: '×', key: '*', type: 'operator' },
+                                                            { label: '⌫', key: 'Backspace', type: 'tool' },
+                                                            { label: '7', key: '7' }, { label: '8', key: '8' }, { label: '9', key: '9' }, { label: '-', key: '-', type: 'operator' },
+                                                            { label: '4', key: '4' }, { label: '5', key: '5' }, { label: '6', key: '6' }, { label: '+', key: '+', type: 'operator' },
+                                                            { label: '1', key: '1' }, { label: '2', key: '2' }, { label: '3', key: '3' }, { label: 'EXE', key: 'Enter', type: 'action' },
+                                                            { label: '0', key: '0', span: 2 }, { label: '.', key: '.' },
+                                                        ].map((btn, idx) => (
+                                                            <button
+                                                                key={idx}
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    const currentAmt = newSettlementData.amount || '';
+                                                                    if (btn.key === 'Enter') {
+                                                                        const res = safeEvaluate(currentAmt);
+                                                                        if (res) setNewSettlementData({ ...newSettlementData, amount: res });
+                                                                        setShowCalculator(false);
+                                                                    } else if (btn.key === 'C') {
+                                                                        setNewSettlementData({ ...newSettlementData, amount: '' });
+                                                                    } else if (btn.key === 'Backspace') {
+                                                                        setNewSettlementData({ ...newSettlementData, amount: currentAmt.slice(0, -1) });
+                                                                    } else {
+                                                                        setNewSettlementData({ ...newSettlementData, amount: currentAmt + btn.key });
+                                                                    }
+                                                                }}
+                                                                className={`h-12 rounded-2xl font-black text-base transition-all active:scale-95 border ${btn.span === 2 ? 'col-span-2' : ''} ${btn.type === 'action' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-white/5 border-white/10 text-white'}`}
+                                                            >
+                                                                {btn.label}
+                                                            </button>
+                                                        ))}
                                                     </div>
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
 
                                         {/* High-Fidelity Picker Triggers */}
@@ -1079,21 +1188,34 @@ const FinancialPlans: React.FC = () => {
                                             {newSettlementData.wallet_id && (
                                                 <div className="space-y-2 animate-in fade-in slide-in-from-left-4 duration-500">
                                                     <label className="text-[10px] font-black uppercase tracking-widest text-emerald-500 px-1">Settlement Channel</label>
-                                                    <button
-                                                        onClick={() => setShowChannelPickerSettlement(true)}
-                                                        className="w-full flex items-center gap-4 p-5 rounded-[28px] bg-[var(--surface-deep)]/60 border border-[var(--border-glass)] hover:border-emerald-500/30 transition-all text-left group"
-                                                    >
-                                                        <div className="w-12 h-12 rounded-2xl bg-[var(--surface-overlay)] flex items-center justify-center border border-[var(--border-glass)] text-emerald-500 group-hover:scale-110 transition-transform">
-                                                            <CreditCard size={20} />
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-0.5">Execution Path</p>
-                                                            <h4 className="text-sm font-black text-[var(--text-main)] transition-colors">
-                                                                {newSettlementData.channel_id ? walletsWithBalances.find(w => w.id === newSettlementData.wallet_id)?.channels.find(ch => ch.id === newSettlementData.channel_id)?.type : 'Select Path'}
-                                                            </h4>
-                                                        </div>
-                                                        <ChevronRight size={18} className="text-[var(--text-muted)] group-hover:text-emerald-500 transition-colors" />
-                                                    </button>
+                                                    <div className="flex bg-[var(--surface-deep)]/50 p-2 rounded-2xl border border-[var(--border-glass)] ring-1 ring-[var(--border-subtle)] overflow-x-auto no-scrollbar gap-2">
+                                                        {(() => {
+                                                            const wallet = walletsWithBalances.find(w => w.id === newSettlementData.wallet_id);
+                                                            return (wallet?.computedChannels || []).map((ch: any) => {
+                                                                const isDisabled = ch.balance <= 0;
+                                                                const isSelected = newSettlementData.channel_id === ch.id;
+                                                                return (
+                                                                    <button
+                                                                        key={ch.id}
+                                                                        disabled={isDisabled}
+                                                                        onClick={() => !isDisabled && setNewSettlementData({ ...newSettlementData, channel_id: ch.id })}
+                                                                        className={`flex-none py-3 px-4 min-w-[80px] rounded-xl transition-all flex flex-col items-center gap-1.5 ${isSelected
+                                                                            ? 'bg-[var(--surface-overlay)] text-emerald-500 shadow-lg shadow-emerald-500/10 border border-emerald-500/30'
+                                                                            : isDisabled
+                                                                                ? 'opacity-30 cursor-not-allowed grayscale text-[var(--text-muted)] border border-transparent'
+                                                                                : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--surface-card)] border border-transparent'
+                                                                            }`}
+                                                                    >
+                                                                        <span className="text-[9px] font-black uppercase tracking-widest">{ch.type}</span>
+                                                                        <span className={`text-[10px] font-bold ${isSelected ? 'text-emerald-500' : 'text-[var(--text-main)]'}`}>
+                                                                            {getCurrencySymbol(wallet?.currency || settings.currency)}{ch.balance.toLocaleString()}
+                                                                        </span>
+                                                                        {isDisabled && <span className="text-[6px] font-black text-rose-500 uppercase tracking-widest leading-none">Low Funds</span>}
+                                                                    </button>
+                                                                );
+                                                            });
+                                                        })()}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -1174,25 +1296,45 @@ const FinancialPlans: React.FC = () => {
                                             </button>
                                         </div>
                                         <div className="px-6 py-8 flex-1 overflow-y-auto no-scrollbar space-y-3">
-                                            {walletsWithBalances.find(w => w.id === newSettlementData.wallet_id)?.channels.map(ch => (
-                                                <button
-                                                    key={ch.id}
-                                                    onClick={() => {
-                                                        setNewSettlementData({ ...newSettlementData, channel_id: ch.id });
-                                                        setShowChannelPickerSettlement(false);
-                                                    }}
-                                                    className={`w-full flex items-center gap-4 p-4 rounded-[28px] border transition-all duration-300 ${newSettlementData.channel_id === ch.id ? 'bg-emerald-600 border-emerald-400 shadow-xl shadow-emerald-500/20' : 'bg-[var(--surface-deep)] border-[var(--border-glass)] hover:border-emerald-500/30'}`}
-                                                >
-                                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${newSettlementData.channel_id === ch.id ? 'bg-white/20 text-white' : 'bg-[var(--surface-overlay)] text-emerald-500 border border-[var(--border-glass)]'}`}>
-                                                        <CreditCard size={20} />
-                                                    </div>
-                                                    <div className="flex-1 text-left">
-                                                        <h4 className={`text-sm font-black uppercase tracking-widest ${newSettlementData.channel_id === ch.id ? 'text-white' : 'text-[var(--text-main)]'}`}>{ch.type}</h4>
-                                                        <p className={`text-[9px] font-black uppercase ${newSettlementData.channel_id === ch.id ? 'text-white/60' : 'text-[var(--text-muted)]'}`}>Authorized Connection</p>
-                                                    </div>
-                                                    {newSettlementData.channel_id === ch.id && <Check size={20} className="text-white" />}
-                                                </button>
-                                            ))}
+                                            {(() => {
+                                                const wallet = walletsWithBalances.find(w => w.id === newSettlementData.wallet_id);
+                                                return wallet?.computedChannels.map(ch => {
+                                                    const balance = ch.balance;
+                                                    const isDisabled = balance <= 0;
+                                                    return (
+                                                        <button
+                                                            key={ch.id}
+                                                            disabled={isDisabled}
+                                                            onClick={() => {
+                                                                setNewSettlementData({ ...newSettlementData, channel_id: ch.id });
+                                                                setShowChannelPickerSettlement(false);
+                                                            }}
+                                                            className={`w-full flex items-center gap-4 p-4 rounded-[28px] border transition-all duration-300 ${newSettlementData.channel_id === ch.id
+                                                                ? 'bg-emerald-600 border-emerald-400 shadow-xl shadow-emerald-500/20'
+                                                                : isDisabled
+                                                                    ? 'opacity-40 cursor-not-allowed grayscale bg-[var(--surface-deep)]/50 border-[var(--border-glass)]'
+                                                                    : 'bg-[var(--surface-deep)] border border-[var(--border-glass)] hover:border-emerald-500/30'
+                                                                }`}
+                                                        >
+                                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${newSettlementData.channel_id === ch.id ? 'bg-white/20 text-white' : isDisabled ? 'bg-[var(--surface-overlay)] text-[var(--text-muted)] border border-[var(--border-glass)]' : 'bg-[var(--surface-overlay)] text-emerald-500 border border-[var(--border-glass)]'}`}>
+                                                                <CreditCard size={20} />
+                                                            </div>
+                                                            <div className="flex-1 text-left">
+                                                                <div className="flex items-center justify-between">
+                                                                    <h4 className={`text-sm font-black uppercase tracking-widest ${newSettlementData.channel_id === ch.id ? 'text-white' : isDisabled ? 'text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>{ch.type}</h4>
+                                                                    <span className={`text-[10px] font-mono font-bold ${newSettlementData.channel_id === ch.id ? 'text-white/80' : isDisabled ? 'text-rose-500/50' : 'text-emerald-500/80'}`}>
+                                                                        {getCurrencySymbol(settings.currency)}{balance.toLocaleString()}
+                                                                    </span>
+                                                                </div>
+                                                                <p className={`text-[9px] font-black uppercase ${newSettlementData.channel_id === ch.id ? 'text-white/60' : isDisabled ? 'text-rose-500/60' : 'text-[var(--text-muted)]'}`}>
+                                                                    {isDisabled ? 'Insufficient Liquidity' : 'Authorized Connection'}
+                                                                </p>
+                                                            </div>
+                                                            {newSettlementData.channel_id === ch.id && <Check size={20} className="text-white" />}
+                                                        </button>
+                                                    );
+                                                });
+                                            })()}
                                         </div>
                                     </div>
                                 )}
@@ -1705,9 +1847,6 @@ const FinancialPlans: React.FC = () => {
                         // Fallback or Child deletion (just unlink if it was a child)
                         await deleteComponent(deleteId);
                     }
-
-                    setDeleteId(null);
-                    setDeleteType(null);
                 }}
                 title={`Delete ${deleteType === 'plan' ? 'Financial Plan' : deleteType === 'component' ? 'Resource' : 'Settlement'}`}
                 itemName={

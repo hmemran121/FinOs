@@ -29,6 +29,7 @@ export enum CertaintyLevel {
 
 export interface SyncBase {
   updated_at: number;
+  created_at?: number;
   server_updated_at?: number;
   version: number;
   device_id: string;
@@ -124,6 +125,7 @@ export interface Commitment extends SyncBase {
   walletId?: string;
   nextDate: string;
   status: 'ACTIVE' | 'SETTLED' | 'CANCELLED';
+  categoryId?: string;
   history?: CommitmentEvent[];
   isRecurring?: boolean;
 }
@@ -161,6 +163,7 @@ export interface UserProfile extends SyncBase {
   avatar?: string;
   role: UserRole;
   isSuperAdmin: boolean;
+  status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   organizationId?: string;
   permissions?: Record<string, boolean>;
   version: number;
@@ -245,7 +248,6 @@ export interface AppSettings {
   customAppName?: string;
   glassEffectsEnabled?: boolean;
   customLogoUrl?: string;
-  geminiKeys?: GeminiKeyConfig[];
   preferredGeminiKeyID?: string;
   preferredGeminiModel?: string;
   globalAiInsights?: any[];
@@ -277,6 +279,21 @@ export interface AppNotification extends SyncBase {
   created_at: number;
 }
 
+export interface DeleteProgress {
+  total: number;
+  current: number;
+  itemName: string;
+  isDeleting: boolean;
+  status: string;
+  auditLog: string[]; // For premium live feed
+}
+
+export interface UndoItem {
+  type: 'wallet' | 'transaction' | 'commitment' | 'budget' | 'category' | 'plan' | 'component' | 'settlement';
+  data: any;
+  timestamp: number;
+}
+
 export interface AppState {
   wallets: Wallet[];
   categories: Category[];
@@ -295,6 +312,9 @@ export interface AppState {
   isLoggedIn: boolean;
   sync_status: SyncStatusUI;
   activeGeminiKeyId?: string | null;
+  globalGeminiKeys: GeminiKeyConfig[];
+  deleteProgress: DeleteProgress;
+  undoStack: UndoItem[]; // For premium smart undo
 }
 
 export interface SyncStatusUI {
