@@ -16,7 +16,8 @@ import {
   Sparkles,
   Search,
   Check,
-  Trash2
+  Trash2,
+  Grid
 } from 'lucide-react';
 import DynamicDeleteModal from './modals/DynamicDeleteModal';
 
@@ -84,16 +85,21 @@ const CategoryManager: React.FC = () => {
 
   return (
     <div className="space-y-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="px-1 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-main)] transition-colors">Taxonomy</h1>
-          <p className="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-widest mt-1 transition-colors">System & Custom Segments</p>
+      <div className="px-2 flex justify-between items-center bg-[var(--surface-deep)]/50 p-2 rounded-2xl border border-[var(--border-glass)] mb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[var(--surface-deep)] flex items-center justify-center border border-[var(--border-glass)]">
+            <Grid size={16} className="text-blue-500" />
+          </div>
+          <div>
+            <h1 className="text-sm font-black tracking-tight text-[var(--text-main)] transition-colors">Taxonomy</h1>
+            <p className="text-[8px] text-[var(--text-muted)] font-black uppercase tracking-[0.2em] transition-colors">System Segments</p>
+          </div>
         </div>
         <button
           onClick={() => { setIsAdding(true); setParentForNew(undefined); }}
-          className="bg-blue-600 p-2.5 rounded-xl shadow-xl shadow-blue-600/20 active:scale-95 transition-transform"
+          className="bg-[var(--text-main)] w-8 h-8 rounded-lg flex items-center justify-center shadow-lg active:scale-95 transition-all text-[var(--bg-color)]"
         >
-          <Plus size={20} strokeWidth={3} />
+          <Plus size={16} strokeWidth={3} />
         </button>
       </div>
 

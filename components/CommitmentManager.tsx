@@ -9,7 +9,7 @@ import {
     X, Plus, Calendar, Shield, CreditCard, ShoppingBag,
     Trash2, Edit3, Check, AlertCircle, Info, ArrowRightCircle,
     Zap, Wallet, Clock, ArrowUpRight, History, ShieldCheck,
-    ChevronDown, Layers, ChevronLeft, ChevronRight, Tag, Search, Sparkles
+    ChevronDown, Layers, ChevronLeft, ChevronRight, Tag, Search, Sparkles, ShieldAlert
 } from 'lucide-react';
 import {
     format, isSameDay, startOfMonth, endOfMonth, isWithinInterval,
@@ -54,6 +54,23 @@ const CommitmentManager: React.FC = () => {
 
     return (
         <div className="space-y-4 pt-4 pb-24 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="px-2 flex justify-between items-center bg-[var(--surface-deep)]/50 p-2 rounded-2xl border border-[var(--border-glass)] mb-2">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-[var(--surface-deep)] flex items-center justify-center border border-[var(--border-glass)]">
+                        <ShieldAlert size={16} className="text-blue-500" />
+                    </div>
+                    <div>
+                        <h1 className="text-sm font-black tracking-tight text-[var(--text-main)] transition-colors">Commitment Ledger</h1>
+                        <p className="text-[8px] text-[var(--text-muted)] font-black uppercase tracking-[0.2em] transition-colors">Fiscal Safety Protocols</p>
+                    </div>
+                </div>
+                <button
+                    onClick={() => setShowForm(true)}
+                    className="bg-[var(--text-main)] w-8 h-8 rounded-lg flex items-center justify-center shadow-lg active:scale-95 transition-all text-[var(--bg-color)]"
+                >
+                    <Plus size={16} strokeWidth={3} />
+                </button>
+            </div>
             {/* Premium Coverage Dashboard */}
             <GlassCard className="bg-gradient-to-br from-blue-600/10 via-[var(--surface-overlay)] to-[var(--bg-color)] border-blue-500/20 overflow-hidden relative">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[80px] rounded-full translate-x-12 -translate-y-12" />

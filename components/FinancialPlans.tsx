@@ -347,17 +347,47 @@ const FinancialPlans: React.FC = () => {
             {selectedPlan ? (
                 <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-500">
                     {/* Header */}
-                    <div className="flex items-center justify-between">
-                        <button onClick={handleBack} className="p-3 bg-[var(--surface-deep)] rounded-2xl border border-[var(--border-glass)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all active:scale-95">
-                            <ChevronLeft size={20} />
-                        </button>
-                        <div className="flex flex-col items-center">
-                            <h2 className="text-xl font-black tracking-tighter text-gradient">{selectedPlan.title}</h2>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-500/80">{selectedPlan.plan_type} PLAN</span>
+                    <div className="px-5 py-3 flex justify-between items-center bg-[var(--nav-bg)]/80 border-b border-[var(--border-glass)] backdrop-blur-2xl transition-colors shrink-0 z-50">
+                        <div className="flex items-center gap-3">
+                            <button onClick={handleBack} className="p-2 -ml-2 rounded-full hover:bg-[var(--text-main)]/5 text-[var(--text-main)] active:scale-90 transition-all">
+                                <ChevronLeft size={22} strokeWidth={2.5} />
+                            </button>
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[var(--surface-deep)] border border-[var(--border-glass)] shadow-sm text-indigo-400">
+                                    {selectedPlan?.status === 'FINALIZED' ? <CheckCircle2 size={16} /> : <Target size={16} />}
+                                </div>
+                                <div className="flex flex-col">
+                                    <h2 className="text-sm font-black text-[var(--text-main)] leading-none tracking-tight line-clamp-1 max-w-[200px]">{selectedPlan?.title}</h2>
+                                    <p className="text-[9px] text-[var(--text-muted)] font-black uppercase tracking-[0.15em] mt-0.5 opacity-60">
+                                        {selectedPlan?.status === 'FINALIZED' ? 'Active Plan' : 'Draft Plan'}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <button className="p-3 bg-[var(--surface-deep)] rounded-2xl border border-[var(--border-glass)] text-[var(--text-muted)] transition-all opacity-0 pointer-events-none">
-                            <MoreVertical size={20} />
-                        </button>
+
+                        <div className="flex items-center gap-2">
+                            {selectedPlan?.status !== 'FINALIZED' && (
+                                <button
+                                    onClick={() => setDeleteId(selectedPlanId)}
+                                    className="w-8 h-8 flex items-center justify-center bg-[var(--surface-glass)] rounded-full hover:bg-red-500/10 hover:text-red-500 transition-colors text-[var(--text-muted)] active:scale-90 border border-transparent hover:border-red-500/20"
+                                >
+                                    <Trash2 size={16} strokeWidth={2.5} />
+                                </button>
+                            )}
+                            <button
+                                onClick={() => {
+                                    if (selectedPlan?.status === 'DRAFT') {
+                                        setIsAddingComponent(true);
+                                    } else {
+                                        setIsAddingSettlement(true);
+                                    }
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--text-main)] text-[var(--bg-color)] rounded-lg font-bold text-xs shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+                            >
+                                <Plus size={14} strokeWidth={3} />
+                                <span>{selectedPlan?.status === 'FINALIZED' ? 'Settle' : 'Add'}</span>
+                            </button>
+                        </div>
                     </div>
 
                     {/* Tactical Overview Dashboard */}

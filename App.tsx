@@ -142,35 +142,37 @@ const MainApp: React.FC = () => {
 
   return (
     <div className={`min-h-screen pb-24 max-w-lg mx-auto bg-[var(--bg-color)] relative transition-colors duration-300 ${settings.isReadOnly ? 'border-t-2 border-rose-500/30' : ''}`}>
-      <header className="px-6 py-5 flex justify-between items-center sticky top-0 bg-[var(--nav-bg)] backdrop-blur-xl z-50 transition-colors duration-300">
+      <header className="px-5 py-3 flex justify-between items-center sticky top-0 bg-[var(--nav-bg)]/80 backdrop-blur-2xl z-50 transition-colors duration-300 border-b border-[var(--border-glass)]">
         <div>
-          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-0.5">{settings.customAppName || 'FinOS 3.0'}</h2>
-          <p className="text-lg font-extrabold tracking-tight text-[var(--text-main)] transition-colors">
-            {activeTab.toUpperCase()}
+          <h2 className="text-[9px] font-black uppercase tracking-[0.25em] text-blue-500 mb-0.5 opacity-80">{settings.customAppName || 'FinOS 3.0'}</h2>
+          <p className="text-sm font-black tracking-tight text-[var(--text-main)] transition-colors uppercase">
+            {activeTab}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <SyncStatusIndicator />
           <button
             onClick={() => setShowNotifications(true)}
-            className="p-3 rounded-2xl border bg-[var(--input-bg)] border-[var(--border-glass)] text-[var(--text-muted)] relative hover:border-blue-500/30 transition-all"
+            className="w-8 h-8 flex items-center justify-center rounded-xl bg-[var(--surface-overlay)] border border-[var(--border-glass)] text-[var(--text-muted)] relative hover:bg-[var(--surface-glass)] hover:text-[var(--text-main)] transition-all active:scale-95"
           >
-            <Bell size={20} />
+            <Bell size={16} />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[var(--nav-bg)] bounce-in">
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-[var(--nav-bg)] bounce-in">
                 {unreadCount}
               </span>
             )}
           </button>
 
-          <ProfileDropdown />
+          <div className="scale-90 origin-right">
+            <ProfileDropdown />
+          </div>
 
           {isSuperAdmin && (
             <button
               onClick={() => setActiveTab('admin')}
-              className={`p-3 rounded-2xl border transition-all ${activeTab === 'admin' ? 'bg-rose-600 border-rose-500 text-white' : 'bg-[var(--input-bg)] border-[var(--border-glass)] text-rose-500'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all active:scale-95 ${activeTab === 'admin' ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-500/20' : 'bg-[var(--surface-overlay)] border-[var(--border-glass)] text-rose-500 hover:bg-rose-500/10'}`}
             >
-              <ShieldAlert size={20} />
+              <ShieldAlert size={16} />
             </button>
           )}
 
@@ -191,10 +193,10 @@ const MainApp: React.FC = () => {
         </Suspense>
       </main>
 
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-md bg-[var(--surface-overlay)]/70 backdrop-blur-[40px] rounded-[40px] p-4 shadow-[0_25px_80px_-15px_rgba(0,0,0,0.6)] z-40 flex items-center justify-between border border-white/10 ring-1 ring-white/5 transition-all duration-700">
+      <nav className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-[var(--surface-overlay)]/80 backdrop-blur-[40px] rounded-full px-6 py-2.5 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.5)] z-[60] flex items-center justify-between border border-white/10 ring-1 ring-white/5 transition-all duration-700">
         <div className="flex-1 flex items-center justify-around relative">
           <div
-            className="absolute h-12 bg-gradient-to-tr from-blue-600/30 to-indigo-600/20 rounded-full border border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.25)] transition-all duration-700 top-1/2 -translate-y-1/2"
+            className="absolute h-9 bg-gradient-to-tr from-blue-600/30 to-indigo-600/20 rounded-full border border-blue-500/40 shadow-[0_0_15px_rgba(59,130,246,0.2)] transition-all duration-700 top-1/2 -translate-y-1/2"
             style={{
               width: '18%',
               left: activeTab === 'dashboard' ? '1%' : activeTab === 'wallets' ? '21%' : activeTab === 'timeline' ? '61%' : activeTab === 'hub' ? '81%' : '-100%',
@@ -202,19 +204,19 @@ const MainApp: React.FC = () => {
             }}
           />
 
-          <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutGrid size={22} />} />
-          <NavButton active={activeTab === 'wallets'} onClick={() => setActiveTab('wallets')} icon={<Wallet size={22} />} />
-          <div className="w-16" />
-          <NavButton active={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')} icon={<History size={22} />} />
-          <NavButton active={activeTab === 'hub'} icon={<Library size={22} />} onClick={() => setActiveTab('hub')} />
+          <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutGrid size={18} />} />
+          <NavButton active={activeTab === 'wallets'} onClick={() => setActiveTab('wallets')} icon={<Wallet size={18} />} />
+          <div className="w-12" />
+          <NavButton active={activeTab === 'timeline'} onClick={() => setActiveTab('timeline')} icon={<History size={18} />} />
+          <NavButton active={activeTab === 'hub'} icon={<Library size={18} />} onClick={() => setActiveTab('hub')} />
         </div>
 
-        <div className="absolute left-1/2 -translate-x-1/2 -top-10">
+        <div className="absolute left-1/2 -translate-x-1/2 -top-6">
           <button
             onClick={() => setShowAdd(true)}
-            className="w-20 h-20 bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-500 rounded-full flex items-center justify-center text-white shadow-[0_15px_40px_rgba(37,99,235,0.6)] ring-8 ring-[var(--bg-color)] active:scale-75 transition-all duration-500 group relative overflow-hidden"
+            className="w-14 h-14 bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-500 rounded-full flex items-center justify-center text-white shadow-[0_10px_30px_rgba(37,99,235,0.5)] ring-[6px] ring-[var(--bg-color)] active:scale-75 transition-all duration-500 group relative overflow-hidden"
           >
-            <Plus size={36} strokeWidth={3} className="relative z-10" />
+            <Plus size={24} strokeWidth={3} className="relative z-10" />
           </button>
         </div>
       </nav>
@@ -240,7 +242,7 @@ const MainApp: React.FC = () => {
 const NavButton: React.FC<{ active: boolean, onClick: () => void, icon: React.ReactNode }> = ({ active, onClick, icon }) => (
   <button
     onClick={onClick}
-    className={`relative z-10 flex flex-col items-center justify-center transition-all duration-500 py-3 min-w-[56px] ${active ? 'text-white' : 'text-[var(--text-muted)]'}`}
+    className={`relative z-10 flex flex-col items-center justify-center transition-all duration-500 py-2 min-w-[56px] ${active ? 'text-white' : 'text-[var(--text-muted)]'}`}
   >
     <div className={`transition-all duration-500 ${active ? 'scale-125 drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]' : 'scale-100 opacity-40 hover:opacity-100 hover:scale-110'}`}>
       {icon}

@@ -926,7 +926,7 @@ export const FinanceProvider = ({ children }: { children: React.ReactNode }) => 
         ...t, walletId: t.wallet_id, channelType: t.channel_type as ChannelType, categoryId: t.category_id,
         isSplit: !!t.is_split, toWalletId: t.to_wallet_id, toChannelType: t.to_channel_type as ChannelType,
         linkedTransactionId: t.linked_transaction_id, isSubLedgerSync: !!t.is_sub_ledger_sync,
-        subLedgerId: t.sub_ledger_id, subLedgerName: t.sub_ledger_name, splits: []
+        subLedgerId: t.sub_ledger_id, subLedgerName: t.sub_ledger_name, settlementGroupId: t.settlement_group_id, splits: []
       }));
 
       const mappedCategories: Category[] = [
@@ -2588,60 +2588,87 @@ export const FinanceProvider = ({ children }: { children: React.ReactNode }) => 
   const finalizePlan = async (id: string) => {
     const plan = state.financialPlans.find(p => p.id === id);
     if (!plan || plan.status === 'FINALIZED') return;
+
     await offlineSyncService.safeTransaction(async () => {
+      // 1. Calculate Plan Totals for Proportional Logic
+      const totalComponentCost = plan.components.reduce((sum, c) => sum + (c.final_cost || c.expected_cost || 0), 0);
+      const safeTotalCost = totalComponentCost || 1; // Prevent division by zero
+
       for (const s of plan.settlements) {
         const channel = state.wallets.flatMap(w => w.channels).find(ch => ch.id === s.channel_id);
         const wallet = state.wallets.find(w => w.id === channel?.wallet_id);
-        if (!channel || !wallet) continue;
-        const txId = await databaseKernel.generateId();
-        const meta = getSyncMetadata();
-        const tx = {
-          id: txId,
-          amount: s.amount,
-          date: new Date().toISOString(),
-          wallet_id: wallet.id,
-          category_id: plan.components[0]?.category_id,
-          note: `[Plan: ${plan.title}]`,
-          type: MasterCategoryType.EXPENSE,
-          channel_type: channel.type,
-          ...meta
-        };
-        await databaseKernel.insert('transactions', tx);
-        await offlineSyncService.enqueue('transactions', txId, 'INSERT', tx, false);
 
-        // Sub-wallet Logic
-        if (wallet.parentWalletId) {
-          const parentWallet = state.wallets.find(pw => pw.id === wallet.parentWalletId);
-          if (parentWallet) {
-            const parentChannel = parentWallet.channels.find(pc => pc.type === channel.type) || parentWallet.channels[0];
-            if (parentChannel) {
-              const refId = await databaseKernel.generateId();
-              const refTx = {
-                id: refId,
-                amount: s.amount,
-                date: tx.date,
-                wallet_id: parentWallet.id,
-                channel_type: parentChannel.type,
-                category_id: tx.category_id,
-                note: `[Ref] [Plan: ${plan.title}] (via ${wallet.name})`,
-                type: MasterCategoryType.EXPENSE,
-                is_split: 0,
-                linked_transaction_id: txId,
-                is_sub_ledger_sync: 1,
-                sub_ledger_id: wallet.id,
-                sub_ledger_name: wallet.name,
-                ...meta
-              };
-              await databaseKernel.insert('transactions', refTx);
-              await offlineSyncService.enqueue('transactions', refId, 'INSERT', refTx, false);
+        if (!channel || !wallet) continue;
+
+        // Generate a Settlement Group ID for this batch (Visual Stacking)
+        const settlementGroupId = await databaseKernel.generateId();
+
+        // Calculate Proportional Ratio (How much of the plan is covered by this settlement?)
+        const settlementRatio = s.amount / safeTotalCost;
+
+        // ATOMIC SPLIT LOOP: Create 1 Transaction per Component
+        console.log(`💰 [FinalizePlan] Processing Batch: ${plan.components.length} components. Ratio: ${settlementRatio}`);
+
+        for (const [index, component] of plan.components.entries()) {
+          const componentCost = component.final_cost || component.expected_cost || 0;
+          const splitAmount = componentCost * settlementRatio;
+
+          console.log(`   🔸 Item ${index + 1}/${plan.components.length}: ${component.name} | Cost: ${componentCost} | Split: ${splitAmount.toFixed(2)}`);
+
+          if (splitAmount <= 0) {
+            console.warn(`      ⚠️ Skipping item ${component.name} due to zero/negative split amount.`);
+            continue; // Skip zero-cost items
+          }
+
+          const txId = await databaseKernel.generateId();
+          const meta = getSyncMetadata();
+
+          // Safety: Ensure Category ID exists, fallback to Uncategorized if vital
+          const safeCategoryId = component.category_id || plan.components[0]?.category_id || 'uncategorized';
+
+          const tx = {
+            id: txId,
+            amount: parseFloat(splitAmount.toFixed(2)), // Round to 2 decimals
+            date: new Date().toISOString(),
+            wallet_id: wallet.id,
+            category_id: safeCategoryId,
+            note: `[Plan: ${plan.title}] - ${component.name} (Paid: ${splitAmount.toFixed(2)} | Total: ${componentCost.toFixed(2)})`,
+            type: MasterCategoryType.EXPENSE,
+            channel_type: channel.type,
+            settlement_group_id: settlementGroupId, // The Glue for Stacking
+            ...meta
+          };
+
+          try {
+            await databaseKernel.insert('transactions', tx);
+            await offlineSyncService.enqueue('transactions', txId, 'INSERT', tx, false);
+            console.log(`      ✅ Inserted TX: ${txId} for ${component.name}`);
+          } catch (insertError) {
+            console.error(`      ❌ Insert Failed for ${component.name}:`, insertError);
+            throw insertError; // Re-throw to trigger transaction rollback
+          }
+
+          // Sub-wallet Logic (Atomic Reflection)
+          if (wallet.parentWalletId) {
+            const parentWallet = state.wallets.find(pw => pw.id === wallet.parentWalletId);
+            if (parentWallet) {
+              // Start of Selection
+              const parentChannel = parentWallet.channels.find(pc => pc.type === channel.type) || parentWallet.channels[0];
+              if (parentChannel) {
+                // Dynamic Wallet Architecture: We do NOT create shadow transactions anymore.
+                // The single atomic transaction in the sub-wallet is sufficient.
+                // The parent wallet will aggregate this via the new View Logic.
+              }
             }
           }
         }
       }
+
       const planUpdates = { status: 'FINALIZED', finalized_at: new Date().toISOString(), ...getSyncMetadata() };
       await databaseKernel.update('financial_plans', id, planUpdates);
       await offlineSyncService.enqueue('financial_plans', id, 'UPDATE', { id, ...planUpdates }, false);
     });
+
     await loadAppData(false);
     offlineSyncService.sync();
   };

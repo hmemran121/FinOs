@@ -96,6 +96,7 @@ export interface Transaction extends SyncBase {
   isSubLedgerSync?: boolean;
   subLedgerId?: string;
   subLedgerName?: string;
+  settlementGroupId?: string;
 }
 
 export interface Budget extends SyncBase {

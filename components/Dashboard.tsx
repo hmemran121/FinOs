@@ -254,35 +254,38 @@ const Dashboard: React.FC = () => {
 
       {/* Quick Actions / System Tools */}
       <section>
-        <div className="flex justify-between items-center mb-4 px-2">
+        <div className="flex justify-between items-center mb-2 px-2 bg-[var(--surface-deep)]/50 p-2 rounded-2xl border border-[var(--border-glass)]">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/10 rounded-xl border border-blue-500/20">
-              <Zap size={18} className="text-blue-400" />
+            <div className="w-8 h-8 rounded-lg bg-[var(--surface-deep)] flex items-center justify-center border border-[var(--border-glass)]">
+              <Zap size={16} className="text-blue-500" />
             </div>
-            <h1 className="text-2xl font-black text-[var(--text-main)] italic tracking-tight transition-colors">
-              {settings.customAppName || 'FinOS Dashboard'}
-            </h1>
+            <div>
+              <h1 className="text-sm font-black text-[var(--text-main)] italic tracking-tight transition-colors">
+                {settings.customAppName || 'FinOS Dashboard'}
+              </h1>
+              <p className="text-[8px] text-[var(--text-muted)] font-black uppercase tracking-[0.2em] transition-colors">System Tools</p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('hub')}
-              className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 rounded-full border border-blue-500/20 transition-all group"
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20 transition-all group"
             >
               <span className="text-[9px] font-black uppercase tracking-widest text-blue-400">See All</span>
-              <ChevronRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+              <ChevronRight size={10} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
-            <div className="flex bg-[var(--surface-deep)] p-1 rounded-xl border border-[var(--border-glass)] transition-colors">
+            <div className="flex bg-[var(--surface-deep)] p-0.5 rounded-lg border border-[var(--border-glass)] transition-colors">
               <button
                 onClick={() => setToolViewMode('grid')}
-                className={`p-1.5 rounded-lg transition-all ${toolViewMode === 'grid' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
+                className={`p-1 rounded-md transition-all ${toolViewMode === 'grid' ? 'bg-blue-600 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
               >
-                <Grid size={14} />
+                <Grid size={12} />
               </button>
               <button
                 onClick={() => setToolViewMode('list')}
-                className={`p-1.5 rounded-lg transition-all ${toolViewMode === 'list' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
+                className={`p-1 rounded-md transition-all ${toolViewMode === 'list' ? 'bg-blue-600 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-blue-400'}`}
               >
-                <List size={14} />
+                <List size={12} />
               </button>
             </div>
           </div>

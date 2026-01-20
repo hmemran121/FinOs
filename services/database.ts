@@ -146,7 +146,7 @@ class DatabaseKernel {
         return this.initPromise;
     }
 
-    private currentSchemaVersion: number = 29;
+    private currentSchemaVersion: number = 30;
 
     private async applySchema() {
         if (!this.db) throw new Error('DB handle lost during schema application');
@@ -219,7 +219,7 @@ class DatabaseKernel {
             categories_user: `id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, color TEXT, type TEXT, parent_id TEXT, "order" INTEGER, embedding TEXT, ${syncFields}`,
             wallets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, currency TEXT NOT NULL, initial_balance REAL, color TEXT, icon TEXT, is_visible INTEGER DEFAULT 1, is_primary INTEGER DEFAULT 0, uses_primary_income INTEGER DEFAULT 0, parent_wallet_id TEXT, ${syncFields}`,
             channels: `id TEXT PRIMARY KEY, wallet_id TEXT NOT NULL, type TEXT NOT NULL, balance REAL DEFAULT 0, ${syncFields}, FOREIGN KEY(wallet_id) REFERENCES wallets(id)`,
-            transactions: `id TEXT PRIMARY KEY, amount REAL NOT NULL, date TEXT NOT NULL, wallet_id TEXT, channel_type TEXT, category_id TEXT, note TEXT, type TEXT, is_split INTEGER DEFAULT 0, to_wallet_id TEXT, to_channel_type TEXT, linked_transaction_id TEXT, is_sub_ledger_sync INTEGER DEFAULT 0, sub_ledger_id TEXT, sub_ledger_name TEXT, ${syncFields}`,
+            transactions: `id TEXT PRIMARY KEY, amount REAL NOT NULL, date TEXT NOT NULL, wallet_id TEXT, channel_type TEXT, category_id TEXT, note TEXT, type TEXT, is_split INTEGER DEFAULT 0, to_wallet_id TEXT, to_channel_type TEXT, linked_transaction_id TEXT, is_sub_ledger_sync INTEGER DEFAULT 0, sub_ledger_id TEXT, sub_ledger_name TEXT, settlement_group_id TEXT, ${syncFields}`,
             transfers: `id TEXT PRIMARY KEY, from_wallet_id TEXT NOT NULL, to_wallet_id TEXT NOT NULL, from_channel TEXT NOT NULL, to_channel TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, note TEXT, ${syncFields}`,
             commitments: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, frequency TEXT NOT NULL, certainty_level TEXT NOT NULL, type TEXT NOT NULL, wallet_id TEXT, category_id TEXT, next_date TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', history TEXT DEFAULT '[]', is_recurring INTEGER DEFAULT 0, ${syncFields}`,
             budgets: `id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, category_id TEXT, period TEXT, ${syncFields}`,
@@ -270,6 +270,12 @@ class DatabaseKernel {
             await this.db.execute(`ALTER TABLE transactions ADD COLUMN sub_ledger_id TEXT`);
             await this.db.execute(`ALTER TABLE transactions ADD COLUMN sub_ledger_name TEXT`);
         } catch (e) { }
+
+        // Atomic Settlement Group Migration (v30)
+        if (oldVersion < 30) {
+            console.log("🛠️ [Database] Migrating to v30 (Atomic Settlements)...");
+            try { await this.db.execute(`ALTER TABLE transactions ADD COLUMN settlement_group_id TEXT`); } catch (e) { }
+        }
 
         // Category Parent Migration (v11)
         try {
@@ -577,7 +583,13 @@ class DatabaseKernel {
             try {
                 const res = await task();
                 if (Capacitor.getPlatform() === 'web') {
-                    await this.sqlite.saveToStore('finos_db');
+                    // Optimization & Safety: Only save to store if we are NOT in a transaction.
+                    // Saving mid-transaction can cause state corruption or implicit commits in jeep-sqlite.
+                    const db = await this.getDb();
+                    const status = await db.isTransactionActive();
+                    if (!status.result) {
+                        await this.sqlite.saveToStore('finos_db');
+                    }
                 }
                 return res;
             } catch (e) {
