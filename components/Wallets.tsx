@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useFinance, WalletWithBalance } from '../store/FinanceContext';
 import { GlassCard } from './ui/GlassCard';
+import { HolographicCard } from './ui/HolographicCard';
 import { ICON_MAP } from '../constants';
 import { Plus, CreditCard, Landmark, Smartphone, Coins, Edit3, Trash2, ArrowLeftRight, Link2, TrendingDown, ChevronRight } from 'lucide-react';
 import WalletForm from './WalletForm';
@@ -84,7 +85,7 @@ const Wallets: React.FC = () => {
 
       <div className="grid gap-3">
         {walletsWithBalances.map(wallet => (
-          <GlassCard
+          <HolographicCard
             key={wallet.id}
             onClick={() => handleWalletSelect(wallet)}
             className={`relative overflow-hidden group border cursor-pointer hover:border-blue-500/20 transition-all ${wallet.usesPrimaryIncome ? 'border-purple-500/10 bg-purple-500/5' : 'border-[var(--border-glass)]'} bg-[var(--surface-glass)] p-4`}
@@ -166,7 +167,7 @@ const Wallets: React.FC = () => {
                 Flow Details
               </button>
             </div>
-          </GlassCard>
+          </HolographicCard>
         ))}
       </div>
 

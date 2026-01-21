@@ -29,8 +29,8 @@ const HealthScoreCard: React.FC = () => {
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mb-1 transition-colors">Stability Index</p>
                     <h2 className="text-xl font-black tracking-tighter text-[var(--text-main)] transition-colors">Financial Health</h2>
                 </div>
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${getScoreBg(score)} transition-all duration-700`}>
-                    <ShieldCheck className={getScoreColor(score)} size={24} />
+                <div className={`w-12 h-12 shrink-0 rounded-full grid place-items-center border ${getScoreBg(score)} transition-all duration-700 p-0`}>
+                    <ShieldCheck className={getScoreColor(score)} size={24} strokeWidth={2.5} />
                 </div>
             </div>
 
