@@ -4,13 +4,19 @@ import { GlassCard } from './ui/GlassCard';
 import { ICON_MAP } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { getFinancialInsights, FinancialInsight } from '../services/gemini';
-import { ArrowUpRight, ArrowDownLeft, BrainCircuit, TrendingDown, RefreshCcw, ShieldCheck, Wallet, ArrowRightCircle, Grid, List, ShieldAlert, Layout, Target, ChevronRight, Zap } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, BrainCircuit, TrendingDown, TrendingUp, RefreshCcw, ShieldCheck, Wallet, ArrowRightCircle, Grid, List, ShieldAlert, Layout, Target, ChevronRight, Zap } from 'lucide-react';
 import HealthScoreCard from './HealthScoreCard';
 import FinancialTimeline from './FinancialTimeline';
 import SyncDiagnostics from './SyncDiagnostics';
 import { GlobalDashboard } from './admin/GlobalDashboard';
 import { supabase } from "../services/supabase";
 import { X, Bell } from 'lucide-react';
+import SmartHeader from './dashboard/SmartHeader';
+import HealthRing from './dashboard/HealthRing';
+import ActionDeck from './dashboard/ActionDeck';
+import PulseCarousel from './dashboard/PulseCarousel';
+import FinancialOverview from './dashboard/FinancialOverview';
+import DynamicCognitiveSection from './dashboard/DynamicCognitiveSection';
 
 const Dashboard: React.FC = () => {
   const { totalBalance, availableAfterCommitments, walletsWithBalances, transactions, isCloudLoading, getCurrencySymbol, settings, setActiveTab, isSuperAdmin } = useFinance();
@@ -102,10 +108,34 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const chartData = transactions.slice(0, 7).reverse().map((t, i) => ({
-    name: i.toString(),
-    amount: t.amount
-  }));
+  const chartData = transactions
+    .filter(t => t.type === 'EXPENSE')
+    .slice(0, 7)
+    .reverse()
+    .map((t, _, arr) => {
+      const d = new Date(t.date);
+      // Logic: If multiple transactions on same day, show time to differentiate
+      // Check count of this date in the dataset
+      const sameDayCount = arr.filter(item => new Date(item.date).toDateString() === d.toDateString()).length;
+
+      let name;
+      if (sameDayCount > 1) {
+        // If dense data for this day, use Time
+        name = d.toLocaleTimeString(settings.language === 'BN' ? 'bn-BD' : 'en-US', { hour: 'numeric', minute: '2-digit' });
+      } else {
+        // Sparse data, use Date
+        const isToday = d.toDateString() === new Date().toDateString();
+        name = isToday
+          ? 'Today'
+          : d.toLocaleDateString(settings.language === 'BN' ? 'bn-BD' : 'en-US', { weekday: 'short', day: 'numeric' });
+      }
+
+      return {
+        name,
+        amount: t.amount,
+        fullDate: d.toLocaleString()
+      };
+    });
 
   const allTimeExpenses = transactions
     .filter(t => t.type === 'EXPENSE')
@@ -157,100 +187,72 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Total Balance & Summary Card */}
-      <GlassCard
-        className={`relative overflow-hidden border-[var(--accent-primary)]/30 flex flex-col justify-between ${isCompact ? 'min-h-[160px] p-4' : 'min-h-[220px] p-6'}`}
-        style={{ background: `linear-gradient(135deg, ${settings.accentColor}33, ${settings.accentColor}11)` }}
-      >
-        <div className="absolute top-0 right-0 w-32 h-32 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2" style={{ backgroundColor: settings.accentColor + '22' }} />
+      {/* Smart Dynamic Header */}
+      <SmartHeader />
 
-        <div className="flex justify-between items-start relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: settings.accentColor }} />
-              <p className="text-[var(--text-muted)] text-xs font-black uppercase tracking-widest transition-colors">
-                {isBN ? 'মোট ব্যালেন্স' : 'Global Net Worth'}
-              </p>
-              {isCloudLoading && <RefreshCcw size={12} className="animate-spin" style={{ color: settings.accentColor }} />}
+      {/* Main Financial Overview (Balance & Expenses) */}
+      <FinancialOverview />
+
+      {/* Gamified Health & Actions */}
+      <div className="grid grid-cols-1 gap-4">
+        <HealthRing />
+        <ActionDeck />
+      </div>
+
+      {/* Rotating Stats Ticker */}
+      <PulseCarousel />
+
+      {/* Old Chart Section - Keeping for now but modernized */}
+      <div className="p-4 bg-[var(--surface-deep)] rounded-[32px] border border-[var(--border-glass)] relative overflow-hidden group">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-500/10 rounded-xl">
+              <TrendingUp size={16} className="text-blue-500" />
             </div>
-            <h1 className={`${settings.privacyMode ? 'blur-md' : ''} text-5xl font-black tracking-tighter text-gradient py-2`}>
-              {formatValue(displayBalance)}
-            </h1>
-            <div className="flex items-center gap-2 mt-1 px-1">
-              <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-[9px] font-black uppercase tracking-widest ${availableAfterCommitments > 0 ? 'text-[var(--accent-primary)]' : 'text-rose-500'}`}>
-                {formatValue(availableAfterCommitments)} {isBN ? 'প্রতিশ্রুতি পরবর্তী অবশিষ্ট' : 'Available After Commitments'}
-              </span>
+            <div>
+              <h3 className="text-sm font-black text-[var(--text-main)]">Expense Trajectory</h3>
+              <p className="text-[8px] font-black uppercase tracking-widest text-[var(--text-muted)]">Last 7 Transactions</p>
             </div>
-          </div>
-          <div className="bg-[var(--surface-deep)] p-3 rounded-2xl backdrop-blur-3xl border border-[var(--border-glass)] shadow-2xl transition-all">
-            <ShieldCheck style={{ color: settings.accentColor }} size={20} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 relative z-10">
-          <div className="flex flex-col gap-2 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 p-4 rounded-[24px] group transition-all">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <ArrowUpRight size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{isBN ? 'আয়' : 'Revenue Flow'}</span>
-            </div>
-            <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-lg font-black text-emerald-500`}>+{formatValue(incomeThisMonth)}</span>
-          </div>
+        <div className="h-[120px] w-full mt-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={settings.accentColor} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={settings.accentColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 'bold' }}
+                tickLine={false}
+                axisLine={false}
+                dy={10}
+                interval={0}
+              />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{ borderRadius: '12px', border: 'none', background: 'rgba(0,0,0,0.8)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}
+                itemStyle={{ color: '#fff', fontSize: '10px', fontWeight: 'bold' }}
+              />
+              <Area
+                type="monotone"
+                dataKey="amount"
+                stroke={settings.accentColor}
+                strokeWidth={3}
+                fillOpacity={1}
+                fill="url(#colorValue)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-          <div className="flex flex-col gap-2 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 p-4 rounded-[24px] group transition-all">
-            <div className="flex items-center gap-2 text-rose-400">
-              <ArrowDownLeft size={14} className="group-hover:-translate-x-0.5 group-hover:translate-y-0.5 transition-transform" />
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{isBN ? 'ব্যয়' : 'Burn Rate'}</span>
-            </div>
-            <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-lg font-black text-rose-500`}>-{formatValue(expenseThisMonth)}</span>
-          </div>
-        </div>
-
-        <div className="mt-6 pt-5 border-t border-[var(--border-glass)] flex justify-between items-center relative z-10 transition-colors">
-          <div className="flex items-center gap-2 text-[var(--text-muted)]">
-            <TrendingDown size={14} />
-            <span className="text-[9px] font-black uppercase tracking-widest">{isBN ? 'সর্বমোট ব্যয়' : 'Total Outflow'}</span>
-          </div>
-          <span className={`${settings.privacyMode ? 'blur-sm' : ''} text-xs font-black text-rose-500/80 tracking-wider`}>
-            {formatValue(allTimeExpenses)}
-          </span>
-        </div>
-      </GlassCard>
-
-      {/* AI Insights Section */}
-      <section>
-        <div className="flex items-center gap-3 mb-4 px-2">
-          <div className="p-2 bg-purple-500/10 rounded-xl border border-purple-500/20">
-            <BrainCircuit size={18} className="text-purple-400" />
-          </div>
-          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] transition-colors">Cognitive Insights</h2>
-        </div>
-        <div className="flex overflow-x-auto gap-4 pb-4 no-scrollbar -mx-4 px-4">
-          {insights.length > 0 ? insights.map((insight, idx) => (
-            <GlassCard key={idx} className="min-w-[280px] bg-gradient-to-b from-[var(--surface-glass)] to-transparent border-purple-500/10 hover:border-purple-500/30 transition-colors">
-              <div className="flex flex-col gap-4">
-                <p className="text-sm text-[var(--text-main)] leading-relaxed font-medium transition-colors">"{insight.insight}"</p>
-                <div className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full w-fit ${insight.urgency === 'HIGH' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' :
-                  insight.urgency === 'MEDIUM' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
-                    'bg-blue-500/10 text-blue-500 border border-blue-500/20'
-                  }`}>
-                  {insight.urgency} Priority Protocol
-                </div>
-              </div>
-            </GlassCard>
-          )) : (
-            <div className="w-full">
-              <GlassCard className="w-full py-12 text-center border-dashed border-[var(--border-glass)] bg-transparent">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-12 h-12 bg-[var(--surface-deep)] rounded-full flex items-center justify-center animate-pulse border border-[var(--border-glass)]">
-                    <BrainCircuit size={24} className="text-[var(--text-muted)]" />
-                  </div>
-                  <p className="text-xs text-[var(--text-muted)] font-bold uppercase tracking-widest transition-colors">Awaiting Transactional Input...</p>
-                </div>
-              </GlassCard>
-            </div>
-          )}
-        </div>
-      </section>
+      {/* Dynamic AI & Stability Analysis */}
+      <DynamicCognitiveSection />
 
       {/* Quick Actions / System Tools */}
       <section>

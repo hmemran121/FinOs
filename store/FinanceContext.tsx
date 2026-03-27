@@ -170,7 +170,7 @@ const DEFAULT_STATE: AppState = {
   settings: {
     currency: 'USD',
     theme: 'LIGHT',
-    aiEnabled: true,
+    aiEnabled: false,
     biometricEnabled: true,
     accentColor: '#3b82f6',
     language: 'EN',
@@ -247,7 +247,6 @@ export const FinanceProvider = ({ children }: { children: React.ReactNode }) => 
   // Moved to top level to fix Invalid Hook Call error
   const isColdStartRef = useRef(true);
 
-  // v4 Hardening: Stable Biometric Trigger
   // This function is stable and can be passed to the service without causing re-renders
   const triggerBiometricAuth = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -453,6 +452,88 @@ export const FinanceProvider = ({ children }: { children: React.ReactNode }) => 
     if (c.frequency === CommitmentFrequency.WEEKLY) monthlyAmount *= 4.34;
     return acc + monthlyAmount;
   }, 0), [state.commitments]);
+
+  // Dynamic Health Score Calculation
+  useEffect(() => {
+    if (state.transactions.length === 0) return;
+
+    const calculateHealth = () => {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+
+      // 1. Monthly Data
+      const monthlyIncome = state.transactions
+        .filter(t => t.type === 'INCOME' && new Date(t.date).getMonth() === currentMonth)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      const monthlyExpense = state.transactions
+        .filter(t => t.type === 'EXPENSE' && new Date(t.date).getMonth() === currentMonth)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      // 2. Metrics
+
+      // A. Burn Control (30%): Savings Rate
+      // If Expense > Income -> 0. If Savings > 20% -> High Score
+      let burnScore = 0;
+      if (monthlyIncome > 0) {
+        const savingsRate = (monthlyIncome - monthlyExpense) / monthlyIncome;
+        burnScore = Math.min(Math.max(savingsRate * 100 * 2, 0), 100); // 50% savings = 100 score
+      }
+
+      // B. Liquidity (30%): Runway
+      // Target: 6 months of expenses saved
+      let liquidityScore = 0;
+      const avgMonthlyExpense = monthlyExpense || 1000; // Avoid Div/0
+      const runwayMonths = totalBalance / avgMonthlyExpense;
+      liquidityScore = Math.min((runwayMonths / 6) * 100, 100);
+
+      // C. Commitment Coverage (20%): Ability to pay bills
+      let coverageScore = 0;
+      const availableAfterCommitments = totalBalance - totalMonthlyCommitments;
+
+      if (totalMonthlyCommitments === 0) {
+        coverageScore = 100;
+      } else {
+        // If we have enough to cover bills, score is high. 
+        // If available < 0, score is 0.
+        if (availableAfterCommitments >= 0) {
+          coverageScore = 100;
+        } else {
+          // Partial coverage calculation if needed, or just 0 for critical
+          coverageScore = Math.max(0, (totalBalance / totalMonthlyCommitments) * 100);
+        }
+      }
+
+      // D. Stability (20%): Simpler metric for now (Positive Balance trend)
+      const stabilityScore = totalBalance > 0 ? 100 : 0;
+
+      // Weighted Total
+      const totalScore = Math.round(
+        (liquidityScore * 0.3) +
+        (stabilityScore * 0.2) +
+        (burnScore * 0.3) +
+        (coverageScore * 0.2)
+      );
+
+      // Only update if changed to avoid loops (basic check)
+      setState(prev => {
+        if (prev.healthScore.score === totalScore) return prev;
+        return {
+          ...prev,
+          healthScore: {
+            score: totalScore,
+            liquidity: Math.round(liquidityScore),
+            stability: Math.round(stabilityScore),
+            burnControl: Math.round(burnScore),
+            commitmentCoverage: Math.round(coverageScore)
+          }
+        };
+      });
+    };
+
+    calculateHealth();
+  }, [state.transactions, totalBalance, totalMonthlyCommitments]);
+
   const projectedBalances = useMemo(() => {
     const projections: { date: string, balance: number, stress: 'NONE' | 'LOW' | 'HIGH' }[] = [];
     let runningBalance = totalBalance;
